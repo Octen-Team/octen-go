@@ -62,7 +62,7 @@ Always create a client with `NewClient`; the zero value of `Client` is not usabl
 
 Field names follow the [API reference](https://docs.octen.ai) exactly, in Go style: `include_domains` is `IncludeDomains`, `request_id` is `RequestID`, `url` is `URL`. Only `Query` is a plain required string. Every other request scalar is a pointer, so "not set" and "zero" stay distinct (a latitude of `0` is a real value); the helpers `octen.Int`, `octen.String`, `octen.Bool`, `octen.Float64` and the generic `octen.Ptr` build those pointers. Nested option objects are pointers to structs, and lists are slices.
 
-Responses are the whole JSON envelope: `Code`, `Msg`, `RequestID`, `Data` and `Meta`. `RequestID` is always set; `Data` and `Meta` are pointers that are `nil` when the server did not send them. `resp.RawJSON()` returns the body exactly as received, including fields this version does not model.
+Responses are the whole JSON envelope: `Code`, `Msg`, `RequestID`, `Data` and `Meta`. `RequestID` is the body's `request_id`, or an empty string when the body has none; `Data` and `Meta` are pointers that are `nil` when the server did not send them. `resp.RawJSON()` returns the body exactly as received, including fields this version does not model.
 
 ## The six methods
 
@@ -167,7 +167,7 @@ if err == nil {
 }
 ```
 
-`BusinessEntity` is a union of `Company` and `Person`, selected by the entity's `type`. For a `type` this version does not know, or a missing one, only `Type` and `Raw` are filled, so a new entity type never breaks decoding: always keep a `default` branch. `Raw` holds the entity's original JSON. `json.Marshal` of a `BusinessEntity` does not reproduce the API's JSON; use `Raw` when you need to store or forward the entity.
+`BusinessEntity` is a union of `Company` and `Person`, selected by the entity's `type`. For a `type` this version does not know, or a missing one, only `Type` and `Raw` are filled, so a new entity type never breaks decoding: always keep a `default` branch. `Raw` holds the entity's original JSON, and `json.Marshal` writes it back unchanged, so a decoded response can be stored and decoded again. An entity built by hand without `Raw` marshals as its `Company` or `Person`.
 
 ### Local validation
 
@@ -211,7 +211,7 @@ client, err := octen.NewClient(
 - The `User-Agent` is `octen-go-sdk/<version>`.
 - `WithHeader` and `WithRequestHeader` can override `Content-Type`, `Accept` and `User-Agent`. Don't: the API expects JSON in both directions.
 - `WithHTTPClient` does not modify the client you pass in: the SDK works on a copy and sets its own `CheckRedirect` on the copy. Leave `http.Client.Timeout` at 0 there; see [Retries and timeouts](#retries-and-timeouts).
-- Invalid options (no key, a malformed `WithBaseURL` or one with `user:password@`, a query or a fragment, a timeout that is not greater than 0, a negative retry count, an invalid header, a nil `http.Client`) make `NewClient` return a `*ValidationError` whose `Field` names the option. A bad per-call option is returned by the method call the same way.
+- Invalid options (no key, a malformed `WithBaseURL` or one with `user:password@`, a query, a fragment or a port outside 1-65535, a timeout that is not greater than 0, a negative retry count, an invalid header name, a header value or API key with a control character other than tab, a nil `http.Client`) make `NewClient` return a `*ValidationError` whose `Field` names the option. A bad per-call option is returned by the method call the same way.
 
 ## Errors
 
@@ -237,12 +237,16 @@ resp, err := client.Search.Search(ctx, octen.SearchParams{Query: "hello"})
 if err != nil {
 	var apiErr *octen.APIError
 	var timeoutErr *octen.TimeoutError
+	var connErr *octen.ConnectionError
 	switch {
 	case errors.As(err, &timeoutErr):
 		// Check this first: an SDK timeout also satisfies errors.Is(err, context.DeadlineExceeded).
 		log.Println("attempt timed out after", timeoutErr.Timeout)
+	case errors.As(err, &connErr):
+		// Before the context check: an http.Client.Timeout also satisfies context.DeadlineExceeded.
+		log.Println("network error:", connErr.Err)
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
-		// Your own context ended, not an SDK timeout.
+		// Your own context ended.
 		log.Println("stopped:", err)
 	case errors.Is(err, octen.ErrRateLimit):
 		if errors.As(err, &apiErr) && apiErr.RetryAfter != nil {
@@ -252,16 +256,16 @@ if err != nil {
 		// StatusCode, Code (*float64), Message, RequestID, Body (raw bytes).
 		log.Println(apiErr.StatusCode, apiErr.Message, apiErr.RequestID)
 	default:
-		log.Fatal(err) // *ConnectionError, *ValidationError, ...
+		log.Fatal(err) // *ValidationError
 	}
 	return
 }
 _ = resp
 ```
 
-Check for `*TimeoutError` with `errors.As` before anything else. The SDK timeout is built on the context deadline machinery, so `errors.Is(err, context.DeadlineExceeded)` is also true for it; only the `*TimeoutError` target tells it apart from the deadline of a context you passed in.
+Check for `*TimeoutError` with `errors.As` before anything else. `errors.Is(err, context.DeadlineExceeded)` is also true for it, and for a `*ConnectionError` caused by a non-zero `http.Client.Timeout`; only the `*TimeoutError` and `*ConnectionError` targets tell those apart from the deadline of a context you passed in.
 
-`APIError.Message` is taken from the response body's `msg`, `message`, `detail` or `error` field (the first non-empty string, in that order; when `error` is an object, the same keys are searched inside it), else the first 500 characters of the body, else `HTTP <status>`. A redirect (3xx) instead gets a message saying that redirects are not followed and to check the base URL. `RequestID` comes from the `x-request-id` header, else the body's `request_id`; quote it when contacting support. `Error()` reads `octen: <status> <message>` for API errors.
+`APIError.Message` is taken from the response body's `msg`, `message`, `detail` or `error` field (the first non-empty string, in that order; when `error` is an object, the same keys are searched inside it), else the first 500 characters of the body, else `HTTP <status>`. A redirect (3xx) instead gets a message saying that redirects are not followed and to check the base URL. `RequestID` comes from the `x-request-id` header, else the body's `request_id`, and is empty when the response has neither; quote it when contacting support. `Error()` reads `octen: <status> <message>` for API errors.
 
 ## Retries and timeouts
 
@@ -281,9 +285,9 @@ Check for `*TimeoutError` with `errors.As` before anything else. The SDK timeout
 
 **Timeouts.** Each attempt gets its own timeout, which covers connecting, sending, and reading the whole response body. Precedence: `WithRequestTimeout`, then an explicit `WithTimeout`, then the endpoint default (30 s; 120 s for Broad Search).
 
-**`http.Client.Timeout`.** If you pass a client with `WithHTTPClient`, leave its `Timeout` at 0 and use the SDK timeouts instead. A non-zero `Timeout` also applies on top of them; when it fires it surfaces as a `*ConnectionError`, not a `*TimeoutError`, and it is retried only when it fires while dialling.
+**`http.Client.Timeout`.** If you pass a client with `WithHTTPClient`, leave its `Timeout` at 0 and use the SDK timeouts instead. A non-zero `Timeout` also applies on top of them; when it fires it surfaces as a `*ConnectionError`, not a `*TimeoutError`, it is never retried (not even while dialling), and it also satisfies `errors.Is(err, context.DeadlineExceeded)`.
 
-**Idempotency-Key.** Do not add an `Idempotency-Key` header with `WithHeader` or `WithRequestHeader`. Go's `net/http` treats a POST that carries one as replayable and may resend it on its own when a reused connection turns out to be broken, outside the SDK's retry rules. The API does not support idempotency keys, so such a replay can bill the request twice.
+**Idempotency-Key.** Do not add an `Idempotency-Key` or `X-Idempotency-Key` header with `WithHeader` or `WithRequestHeader`. Go's `net/http` treats a POST that carries either one as replayable and may resend it on its own when a reused connection turns out to be broken, outside the SDK's retry rules. The API does not support idempotency keys, so such a replay can bill the request twice.
 
 **Known residual risk of double billing.** The API has no idempotency keys yet, so two situations can bill a request twice or bill a request that looked like it failed:
 
@@ -315,8 +319,10 @@ Because the Python SDK retries more situations (client timeouts and every networ
 
 Behaviour is aligned with `@octen.ai/sdk`. The differences are:
 
-- A 2xx whose body is a successful envelope but does not decode into the typed response returns an `*APIError` (`decode response: ...`). The TypeScript SDK does not check response structure and returns such a body untyped.
-- The API key is trimmed of surrounding whitespace.
+- A 2xx whose body is a successful envelope but does not decode into the typed response returns an `*APIError` (`decode response: ...`) that matches no sentinel. The call was billed, and the data is in `Body`, the raw response bytes; do not retry it. The TypeScript SDK does not check response structure and returns such a body untyped.
+- The API key is trimmed of surrounding whitespace, and an empty or blank `WithAPIKey` falls back to `OCTEN_API_KEY`. The TypeScript SDK rejects an explicit empty key.
+- Every network error while dialling is retried (a refused connection, a dial timeout of the transport's dialer, an unreachable network or host), and so is every DNS error. The TypeScript SDK retries only `ECONNREFUSED`, `ENOTFOUND` and `EAI_AGAIN`.
+- A `Retry-After` HTTP date is parsed strictly with `http.ParseTime` (RFC 1123, RFC 850 or ANSI C format); anything else falls back to the normal backoff. The TypeScript SDK passes any value shaped like an HTTP date to `Date.parse`, which is more lenient.
 
 Everything else that differs follows from Go: methods take a `context.Context` instead of an `AbortSignal`, errors are values matched with `errors.Is` and `errors.As`, and request fields are typed structs.
 
@@ -335,7 +341,7 @@ OCTEN_LIVE=1 OCTEN_API_KEY=... go test -count=1 -run TestLive ./...   # real, bi
 go run ./internal/tools/specdrift   # compares the live OpenAPI spec with testdata/openapi.json
 ```
 
-`testdata/openapi.json` is a snapshot of the public OpenAPI spec that the contract test compares the types against. A weekly workflow runs `specdrift` and fails when the schemas of the six endpoints change upstream; it never rewrites the snapshot.
+`testdata/openapi.json` is a snapshot of the public OpenAPI spec that the contract test compares the types against. A weekly workflow runs `specdrift` and fails when the schemas of the six endpoints change upstream; it never rewrites the snapshot. [testdata/README.md](testdata/README.md) describes the snapshot and how to update it.
 
 ## License
 

@@ -16,7 +16,9 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: stable
-      # Exit 1 means the six endpoints' schemas changed, 2 means the comparison could not run.
+      - name: Build specdrift
+        run: go build -o specdrift ./internal/tools/specdrift
+      # Run the binary, not go run, so its exit code shows: 1 drift, 2 could not run.
       # It never rewrites the snapshot; update testdata/openapi.json by hand.
       - name: Compare the live OpenAPI spec with the snapshot
-        run: go run ./internal/tools/specdrift
+        run: ./specdrift

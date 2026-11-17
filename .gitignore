@@ -7,3 +7,6 @@ coverage.*
 .idea/
 .vscode/
 .DS_Store
+
+# specdrift binary built by the spec-drift workflow
+/specdrift
