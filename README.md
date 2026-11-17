@@ -330,7 +330,7 @@ Everything else that differs follows from Go: methods take a `context.Context` i
 
 The SDK follows semantic versioning. Before 1.0, a minor release may contain incompatible changes; they are listed in [CHANGELOG.md](CHANGELOG.md). Published versions are permanent in the Go module proxy and cannot be deleted; a bad release is withdrawn by adding a `retract` directive to `go.mod` in a later release.
 
-To release, tag `vX.Y.Z` on `main` after CI is green; the release workflow checks the tag against `octen.Version` and warms the module proxy.
+To release, tag `vX.Y.Z` on `main` after CI is green; the release workflow reruns the CI checks on Go 1.22 and the latest Go, checks the tag against `octen.Version` and that the commit is on `main`, then warms the module proxy.
 
 ## Development
 
