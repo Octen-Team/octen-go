@@ -385,3 +385,44 @@ func TestEnumTagsOnRequestFields(t *testing.T) {
 	check(reflect.TypeOf(PlaceUserLocation{}), "Type", "approximate")
 	check(reflect.TypeOf(PlaceWebSearchOptions{}), "Language", langs)
 }
+
+// A decoded response must survive json.Marshal and json.Unmarshal, so callers can cache it.
+func TestBusinessEntityMarshalRoundTrip(t *testing.T) {
+	body := `{"request_id":"r","data":{"entities":[
+		{"type":"company","name":"Acme","identifiers":{"stock_ticker":"ACM"}},
+		{"type":"person","name":"Ann","current_position":"cto"},
+		{"type":"fund","x":1}]}}`
+	var in BusinessSearchResponse
+	if err := json.Unmarshal([]byte(body), &in); err != nil {
+		t.Fatal(err)
+	}
+	var out BusinessSearchResponse
+	if err := json.Unmarshal([]byte(mustMarshal(t, &in)), &out); err != nil {
+		t.Fatal(err)
+	}
+	es := out.Data.Entities
+	if len(es) != 3 {
+		t.Fatalf("entities after round trip: %+v", es)
+	}
+	if es[0].Company == nil || !reflect.DeepEqual(es[0].Company, in.Data.Entities[0].Company) || es[0].Company.Name != "Acme" {
+		t.Errorf("company after round trip: %+v", es[0].Company)
+	}
+	if es[1].Person == nil || !reflect.DeepEqual(es[1].Person, in.Data.Entities[1].Person) || es[1].Person.CurrentPosition != "cto" {
+		t.Errorf("person after round trip: %+v", es[1].Person)
+	}
+	if es[2].Type != "fund" || string(es[2].Raw) != `{"type":"fund","x":1}` {
+		t.Errorf("unknown type after round trip: %+v (raw %s)", es[2], es[2].Raw)
+	}
+
+	// Without Raw, the variant is marshalled; with nothing at all, the entity is null.
+	built := BusinessEntity{Person: &PersonEntity{Type: "person", Name: "Bo"}}
+	if got := mustMarshal(t, built); got != `{"type":"person","name":"Bo"}` {
+		t.Errorf("built person = %s", got)
+	}
+	if got := mustMarshal(t, BusinessEntity{Company: &CompanyEntity{Type: "company", Name: "C"}}); got != `{"type":"company","name":"C"}` {
+		t.Errorf("built company = %s", got)
+	}
+	if got := mustMarshal(t, BusinessEntity{}); got != "null" {
+		t.Errorf("empty entity = %s, want null", got)
+	}
+}

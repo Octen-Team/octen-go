@@ -66,8 +66,17 @@ func testTransport(baseURL string, client *http.Client) (*transport, *sleepRecor
 	return tr, rec
 }
 
+// postBody returns the body of a successful envelope, or the error.
+func postBody(tr *transport, ctx context.Context, body []byte, timeout time.Duration, extra http.Header) ([]byte, error) {
+	res, err := tr.postResponse(ctx, "/search", body, timeout, extra)
+	if err != nil {
+		return nil, err
+	}
+	return res.body, nil
+}
+
 func post(tr *transport, timeout time.Duration) ([]byte, error) {
-	return tr.post(context.Background(), "/search", []byte(`{"query":"q"}`), timeout, nil)
+	return postBody(tr, context.Background(), []byte(`{"query":"q"}`), timeout, nil)
 }
 
 // stallUntilGone blocks until the client goes away, bounded so a broken client cannot hang Close.
@@ -295,7 +304,7 @@ func TestCanceledContextSendsNothing(t *testing.T) {
 	tr, _ := testTransport(s.URL, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := tr.post(ctx, "/search", []byte(`{}`), 5*time.Second, nil)
+	_, err := postBody(tr, ctx, []byte(`{}`), 5*time.Second, nil)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
@@ -315,7 +324,7 @@ func TestCallerDeadlineIsNotSDKTimeout(t *testing.T) {
 	tr, rec := testTransport(s.URL, nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	_, err := tr.post(ctx, "/search", []byte(`{}`), 5*time.Second, nil)
+	_, err := postBody(tr, ctx, []byte(`{}`), 5*time.Second, nil)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("err = %v, want context.DeadlineExceeded", err)
 	}
@@ -340,7 +349,7 @@ func TestCancelDuringBackoff(t *testing.T) {
 		<-ctx.Done()
 		return ctx.Err()
 	}
-	_, err := tr.post(ctx, "/search", []byte(`{}`), 5*time.Second, nil)
+	_, err := postBody(tr, ctx, []byte(`{}`), 5*time.Second, nil)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
@@ -356,7 +365,7 @@ func TestCancelWhileSleepIgnoresIt(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	tr.sleep = func(context.Context, time.Duration) error { cancel(); return nil }
-	if _, err := tr.post(ctx, "/search", []byte(`{}`), 5*time.Second, nil); !errors.Is(err, context.Canceled) {
+	if _, err := postBody(tr, ctx, []byte(`{}`), 5*time.Second, nil); !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
 	if got := s.hits.Load(); got != 1 {
@@ -541,7 +550,7 @@ func TestRequestHeaders(t *testing.T) {
 	defer s.Close()
 	tr := newTransport(s.URL+"/", "test-key", http.Header{"X-Client": {"c"}, "x-api-key": {"wrong"}}, nil, 3)
 	extra := http.Header{"X-Extra": {"e"}, "X-Api-Key": {"wrong-too"}}
-	if _, err := tr.post(context.Background(), "/search", []byte(`{"query":"q"}`), 5*time.Second, extra); err != nil {
+	if _, err := postBody(tr, context.Background(), []byte(`{"query":"q"}`), 5*time.Second, extra); err != nil {
 		t.Fatalf("post: %v", err)
 	}
 	r := <-got
@@ -597,7 +606,7 @@ func TestCancelDuringDialIsNotConnectionError(t *testing.T) {
 	})
 	tr, rec := testTransport("http://127.0.0.1:1", &http.Client{Transport: rt})
 	tr.maxRetries = 0
-	_, err := tr.post(ctx, "/search", []byte(`{}`), 5*time.Second, nil)
+	_, err := postBody(tr, ctx, []byte(`{}`), 5*time.Second, nil)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}

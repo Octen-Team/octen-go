@@ -106,6 +106,9 @@ func retryAfterRounded(h http.Header) *time.Duration {
 	return &d
 }
 
+// stripBOM drops a leading UTF-8 BOM, which fetch's text() also ignores.
+func stripBOM(b []byte) []byte { return bytes.TrimPrefix(b, []byte("\xef\xbb\xbf")) }
+
 func decodeJSON(body []byte) (any, bool) {
 	dec := json.NewDecoder(bytes.NewReader(body))
 	dec.UseNumber()
@@ -122,12 +125,8 @@ func decodeJSON(body []byte) (any, bool) {
 // judgeResponse returns (nil, object) for a successful envelope and an *APIError otherwise.
 // A 2xx is a success only if the body is a non-empty JSON object whose code is not a non-zero number.
 func judgeResponse(status int, h http.Header, body []byte) (*APIError, map[string]any) {
-	// Like fetch's text(), ignore a leading UTF-8 BOM when reading the body as text.
-	text := bytes.TrimPrefix(body, []byte("\xef\xbb\xbf"))
-	parsed, parsedOK := decodeJSON(text)
-	if !parsedOK {
-		parsed = nil
-	}
+	text := stripBOM(body)
+	parsed, _ := decodeJSON(text)
 	obj, isObj := parsed.(map[string]any)
 
 	if status >= 200 && status < 300 && isObj && len(obj) > 0 {

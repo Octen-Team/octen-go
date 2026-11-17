@@ -28,6 +28,8 @@ func TestNewClientValidation(t *testing.T) {
 		{"blank key", []Option{WithAPIKey("  \t")}, "WithAPIKey", "OCTEN_API_KEY"},
 		{"key with newline", []Option{WithAPIKey("a\nb")}, "WithAPIKey", "header"},
 		{"key with NUL", []Option{WithAPIKey("a\x00b")}, "WithAPIKey", "header"},
+		{"key with SOH", []Option{WithAPIKey("a\x01b")}, "WithAPIKey", "header"},
+		{"key with DEL", []Option{WithAPIKey("a\x7fb")}, "WithAPIKey", "header"},
 		{"empty base URL", []Option{WithAPIKey("k"), WithBaseURL("")}, "WithBaseURL", "absolute http(s) URL"},
 		{"relative base URL", []Option{WithAPIKey("k"), WithBaseURL("api.octen.ai")}, "WithBaseURL", "absolute http(s) URL"},
 		{"ftp base URL", []Option{WithAPIKey("k"), WithBaseURL("ftp://api.octen.ai")}, "WithBaseURL", "absolute http(s) URL"},
@@ -39,6 +41,8 @@ func TestNewClientValidation(t *testing.T) {
 		{"credentials in base URL", []Option{WithAPIKey("k"), WithBaseURL("https://user:pw@api.octen.ai")}, "WithBaseURL", "credentials"},
 		{"user only in base URL", []Option{WithAPIKey("k"), WithBaseURL("https://user@api.octen.ai")}, "WithBaseURL", "credentials"},
 		{"invalid port", []Option{WithAPIKey("k"), WithBaseURL("http://host:abc")}, "WithBaseURL", "absolute http(s) URL"},
+		{"port above 65535", []Option{WithAPIKey("k"), WithBaseURL("http://127.0.0.1:99999")}, "WithBaseURL", "port"},
+		{"port zero", []Option{WithAPIKey("k"), WithBaseURL("http://127.0.0.1:0")}, "WithBaseURL", "port"},
 		{"missing bracket", []Option{WithAPIKey("k"), WithBaseURL("http://[::1")}, "WithBaseURL", "absolute http(s) URL"},
 		{"invalid escape", []Option{WithAPIKey("k"), WithBaseURL("https://api.octen.ai/%zz")}, "WithBaseURL", "absolute http(s) URL"},
 		{"control character", []Option{WithAPIKey("k"), WithBaseURL("http://a\x01b")}, "WithBaseURL", "absolute http(s) URL"},
@@ -49,9 +53,11 @@ func TestNewClientValidation(t *testing.T) {
 		{"header name with space", []Option{WithAPIKey("k"), WithHeader("X Bad", "v")}, "WithHeader", "token"},
 		{"header name with colon", []Option{WithAPIKey("k"), WithHeader("X:Bad", "v")}, "WithHeader", "token"},
 		{"header name non-ASCII", []Option{WithAPIKey("k"), WithHeader("X-Bäd", "v")}, "WithHeader", "token"},
-		{"header value CR", []Option{WithAPIKey("k"), WithHeader("X-A", "a\rb")}, "WithHeader", "CR, LF or NUL"},
-		{"header value LF", []Option{WithAPIKey("k"), WithHeader("X-A", "a\nb")}, "WithHeader", "CR, LF or NUL"},
-		{"header value NUL", []Option{WithAPIKey("k"), WithHeader("X-A", "a\x00b")}, "WithHeader", "CR, LF or NUL"},
+		{"header value CR", []Option{WithAPIKey("k"), WithHeader("X-A", "a\rb")}, "WithHeader", "control characters"},
+		{"header value LF", []Option{WithAPIKey("k"), WithHeader("X-A", "a\nb")}, "WithHeader", "control characters"},
+		{"header value NUL", []Option{WithAPIKey("k"), WithHeader("X-A", "a\x00b")}, "WithHeader", "control characters"},
+		{"header value SOH", []Option{WithAPIKey("k"), WithHeader("X-A", "a\x01b")}, "WithHeader", "control characters"},
+		{"header value DEL", []Option{WithAPIKey("k"), WithHeader("X-A", "a\x7fb")}, "WithHeader", "control characters"},
 		{"x-api-key header", []Option{WithAPIKey("k"), WithHeader("x-api-key", "other")}, "WithHeader", "WithAPIKey"},
 		{"X-API-KEY header", []Option{WithAPIKey("k"), WithHeader("X-API-KEY", "other")}, "WithHeader", "WithAPIKey"},
 		{"nil http client", []Option{WithAPIKey("k"), WithHTTPClient(nil)}, "WithHTTPClient", "nil"},
@@ -83,7 +89,7 @@ func TestNewClientAcceptsValidOptions(t *testing.T) {
 			t.Errorf("WithBaseURL(%q): %v", base, err)
 		}
 	}
-	if _, err := NewClient(WithAPIKey("k"), WithMaxRetries(0), WithTimeout(time.Nanosecond), WithHeader("X-Trace_ID.1~", "a b\tc"), WithHTTPClient(&http.Client{})); err != nil {
+	if _, err := NewClient(WithAPIKey("k\tk"), WithBaseURL("http://127.0.0.1:65535"), WithMaxRetries(0), WithTimeout(time.Nanosecond), WithHeader("X-Trace_ID.1~", "a b\tc"), WithHTTPClient(&http.Client{})); err != nil {
 		t.Fatalf("valid options rejected: %v", err)
 	}
 }
@@ -224,6 +230,8 @@ func TestRequestOptionValidation(t *testing.T) {
 		{"negative timeout", WithRequestTimeout(-1), "WithRequestTimeout"},
 		{"bad header name", WithRequestHeader("bad name", "v"), "WithRequestHeader"},
 		{"bad header value", WithRequestHeader("X-A", "a\r\nInjected: 1"), "WithRequestHeader"},
+		{"header value SOH", WithRequestHeader("X-A", "a\x01b"), "WithRequestHeader"},
+		{"header value DEL", WithRequestHeader("X-A", "a\x7fb"), "WithRequestHeader"},
 		{"x-api-key", WithRequestHeader("X-Api-Key", "other"), "WithRequestHeader"},
 	}
 	for _, tc := range cases {

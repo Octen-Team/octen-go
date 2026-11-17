@@ -1,6 +1,7 @@
 package octen
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -85,5 +86,19 @@ func TestAPIErrorIsMapping(t *testing.T) {
 				t.Errorf("status %d must match no sentinel", s)
 			}
 		}
+	}
+}
+
+// The DeadlineExceeded match must hold even when Err does not carry it.
+func TestTimeoutErrorMatchesDeadlineExceeded(t *testing.T) {
+	te := &TimeoutError{Timeout: time.Second, Err: io.EOF}
+	if !errors.Is(fmt.Errorf("x: %w", te), context.DeadlineExceeded) {
+		t.Fatal("TimeoutError must match context.DeadlineExceeded")
+	}
+	if errors.Is(te, context.Canceled) {
+		t.Fatal("TimeoutError must not match context.Canceled")
+	}
+	if !errors.Is(te, io.EOF) {
+		t.Fatal("TimeoutError must still unwrap to Err")
 	}
 }

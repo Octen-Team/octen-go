@@ -31,7 +31,6 @@ type Client struct {
 func NewClient(opts ...Option) (*Client, error) {
 	cfg := &clientConfig{
 		baseURL:    defaultBaseURL,
-		timeout:    defaultTimeout,
 		maxRetries: defaultMaxRetries,
 		headers:    http.Header{},
 	}
@@ -47,22 +46,20 @@ func NewClient(opts ...Option) (*Client, error) {
 	if key == "" {
 		return nil, &ValidationError{Field: "WithAPIKey", Message: "An API key is required: pass WithAPIKey or set the " + apiKeyEnv + " environment variable."}
 	}
-	if strings.ContainsAny(key, "\r\n\x00") {
+	if !isFieldValue(key) {
 		return nil, &ValidationError{Field: "WithAPIKey", Message: "API key contains characters that are not valid in an HTTP header."}
 	}
 	c := &core{
-		transport:  newTransport(cfg.baseURL, key, cfg.headers, cfg.httpClient, cfg.maxRetries),
-		timeout:    cfg.timeout,
-		timeoutSet: cfg.timeoutSet,
+		transport: newTransport(cfg.baseURL, key, cfg.headers, cfg.httpClient, cfg.maxRetries),
+		timeout:   cfg.timeout,
 	}
 	return &Client{Search: &SearchService{c: c}, PlaceSearch: &PlaceSearchService{c: c}}, nil
 }
 
-// core is what the services share: the transport and the client-level timeout setting.
+// core is what the services share: the transport and the client timeout, 0 when not set.
 type core struct {
-	transport  *transport
-	timeout    time.Duration
-	timeoutSet bool
+	transport *transport
+	timeout   time.Duration
 }
 
 // call validates params, posts them to path and decodes the response into R. The attempt
@@ -85,7 +82,7 @@ func call[R any](ctx context.Context, c *core, path string, params any, def time
 	switch {
 	case rc.timeout > 0:
 		timeout = rc.timeout
-	case c.timeoutSet:
+	case c.timeout > 0:
 		timeout = c.timeout
 	}
 
@@ -94,8 +91,7 @@ func call[R any](ctx context.Context, c *core, path string, params any, def time
 		return nil, nil, err
 	}
 	out := new(R)
-	text := bytes.TrimPrefix(res.body, []byte("\xef\xbb\xbf"))
-	if err := json.Unmarshal(text, out); err != nil {
+	if err := json.Unmarshal(stripBOM(res.body), out); err != nil {
 		return nil, nil, decodeError(res, err)
 	}
 	return out, res.body, nil
@@ -114,12 +110,12 @@ func encodeBody(params any) ([]byte, error) {
 
 // decodeError reports a 2xx body that was judged successful but does not fit the typed response.
 func decodeError(res *attemptResult, cause error) *APIError {
-	e := &APIError{StatusCode: res.status, Message: "decode response: " + cause.Error(), Body: res.body}
-	if parsed, ok := decodeJSON(bytes.TrimPrefix(res.body, []byte("\xef\xbb\xbf"))); ok {
-		e.Code = extractCode(parsed)
-		e.RequestID = extractRequestID(res.header, parsed)
-	} else {
-		e.RequestID = res.header.Get("x-request-id")
+	parsed, _ := decodeJSON(stripBOM(res.body))
+	return &APIError{
+		StatusCode: res.status,
+		Code:       extractCode(parsed),
+		Message:    "decode response: " + cause.Error(),
+		RequestID:  extractRequestID(res.header, parsed),
+		Body:       res.body,
 	}
-	return e
 }

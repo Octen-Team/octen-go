@@ -1,6 +1,7 @@
 package octen
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -48,10 +49,8 @@ func (e *APIError) Is(target error) bool {
 	return false
 }
 
-// TimeoutError reports that one attempt exceeded its timeout.
-//
-// It also matches context.DeadlineExceeded, so test it with errors.As and a *TimeoutError
-// target before looking for your own context's deadline.
+// TimeoutError reports that one attempt exceeded its timeout. It also matches
+// context.DeadlineExceeded, so check errors.As with a *TimeoutError target first.
 type TimeoutError struct {
 	Timeout time.Duration
 	Err     error
@@ -62,6 +61,9 @@ func (e *TimeoutError) Error() string {
 }
 
 func (e *TimeoutError) Unwrap() error { return e.Err }
+
+// Is keeps the DeadlineExceeded match independent of how net/http wraps the cause.
+func (e *TimeoutError) Is(target error) bool { return target == context.DeadlineExceeded }
 
 // ConnectionError wraps a network failure that is not a timeout or cancellation.
 type ConnectionError struct {

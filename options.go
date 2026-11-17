@@ -3,6 +3,7 @@ package octen
 import (
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -17,8 +18,7 @@ type RequestOption func(*requestConfig) error
 type clientConfig struct {
 	apiKey     string
 	baseURL    string
-	timeout    time.Duration
-	timeoutSet bool
+	timeout    time.Duration // 0 means not set
 	maxRetries int
 	headers    http.Header
 	httpClient *http.Client
@@ -57,7 +57,7 @@ func WithTimeout(d time.Duration) Option {
 		if err := checkTimeout("WithTimeout", d); err != nil {
 			return err
 		}
-		c.timeout, c.timeoutSet = d, true
+		c.timeout = d
 		return nil
 	}
 }
@@ -149,6 +149,11 @@ func checkBaseURL(raw string) (string, error) {
 	if u.User != nil {
 		return "", bad("baseURL must not contain credentials (user:password@); use WithAPIKey.")
 	}
+	if p := u.Port(); p != "" {
+		if n, err := strconv.Atoi(p); err != nil || n < 1 || n > 65535 {
+			return "", bad("baseURL port must be between 1 and 65535.")
+		}
+	}
 	return strings.TrimRight(raw, "/"), nil
 }
 
@@ -159,10 +164,21 @@ func checkHeader(field, name, value string) error {
 	if strings.EqualFold(name, "x-api-key") {
 		return &ValidationError{Field: field, Message: "x-api-key cannot be set as a header; pass the key with WithAPIKey."}
 	}
-	if strings.ContainsAny(value, "\r\n\x00") {
-		return &ValidationError{Field: field, Message: "value of header " + quote(name) + " must not contain CR, LF or NUL."}
+	if !isFieldValue(value) {
+		return &ValidationError{Field: field, Message: "value of header " + quote(name) + " must not contain control characters other than tab."}
 	}
 	return nil
+}
+
+// isFieldValue rejects the control bytes (all but tab, including DEL) that RFC 7230
+// forbids in a field value; net/http would otherwise fail the request only when sent.
+func isFieldValue(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; (c < 0x20 && c != '\t') || c == 0x7f {
+			return false
+		}
+	}
+	return true
 }
 
 // isToken reports whether s is an RFC 7230 token, the grammar of a header field name.

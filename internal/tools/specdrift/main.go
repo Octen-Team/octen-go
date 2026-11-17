@@ -1,8 +1,6 @@
-// Command specdrift compares the live Octen OpenAPI spec with testdata/openapi.json.
-//
-// Only the request and response schemas of the six endpoints are compared, after
-// spec.Flatten normalises them. Exit codes: 0 no drift, 1 drift, 2 cannot run.
-// It never rewrites the snapshot; update that by hand after reviewing a drift.
+// Command specdrift compares the six endpoints' schemas in the live OpenAPI spec with
+// testdata/openapi.json. Exit codes: 0 no drift, 1 drift, 2 cannot run. It never
+// rewrites the snapshot, which is updated by hand after a drift is reviewed.
 package main
 
 import (

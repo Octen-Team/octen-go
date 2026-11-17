@@ -48,6 +48,8 @@ func newTransport(baseURL, apiKey string, headers http.Header, client *http.Clie
 		headers:    headers,
 		client:     c,
 		maxRetries: maxRetries,
+		sleep:      sleepCtx,
+		rnd:        rand.Float64,
 	}
 }
 
@@ -60,16 +62,7 @@ type attemptResult struct {
 	retryable bool
 }
 
-// post sends body as JSON and returns the raw response body of a successful envelope.
-func (t *transport) post(ctx context.Context, path string, body []byte, timeout time.Duration, extra http.Header) ([]byte, error) {
-	res, err := t.postResponse(ctx, path, body, timeout, extra)
-	if err != nil {
-		return nil, err
-	}
-	return res.body, nil
-}
-
-// postResponse is post that also keeps the status and headers of the successful response.
+// postResponse sends body as JSON and returns the response of a successful envelope.
 func (t *transport) postResponse(ctx context.Context, path string, body []byte, timeout time.Duration, extra http.Header) (*attemptResult, error) {
 	url := t.baseURL + "/" + strings.TrimLeft(path, "/")
 	header := t.buildHeaders(extra)
@@ -106,7 +99,7 @@ func (t *transport) postResponse(ctx context.Context, path string, body []byte, 
 		if status != 0 {
 			retryAfter, hasRetryAfter = parseRetryAfter(res.header.Get("Retry-After"), time.Now())
 		}
-		delay, giveUp := retryDelay(attempt, status, retryAfter, hasRetryAfter, t.random)
+		delay, giveUp := retryDelay(attempt, status, retryAfter, hasRetryAfter, t.rnd)
 		if giveUp {
 			return nil, lastErr
 		}
@@ -167,20 +160,9 @@ func (t *transport) buildHeaders(extra http.Header) http.Header {
 	return h
 }
 
-func (t *transport) random() float64 {
-	if t.rnd != nil {
-		return t.rnd()
-	}
-	return rand.Float64()
-}
-
 // wait sleeps for the backoff and reports the caller's cancellation if it happened meanwhile.
 func (t *transport) wait(ctx context.Context, d time.Duration) error {
-	sleep := t.sleep
-	if sleep == nil {
-		sleep = sleepCtx
-	}
-	err := sleep(ctx, d)
+	err := t.sleep(ctx, d)
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return fmt.Errorf("octen: %w", ctxErr)
 	}
@@ -210,11 +192,6 @@ func redirectError(e *APIError, h http.Header) *APIError {
 	if loc := h.Get("Location"); loc != "" {
 		msg += " to " + loc
 	}
-	return &APIError{
-		StatusCode: e.StatusCode,
-		Code:       e.Code,
-		Message:    msg + "; redirects are not followed, check baseURL",
-		RequestID:  e.RequestID,
-		Body:       e.Body,
-	}
+	e.Message = msg + "; redirects are not followed, check baseURL"
+	return e
 }

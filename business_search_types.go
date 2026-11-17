@@ -204,6 +204,19 @@ func (e *BusinessEntity) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// MarshalJSON writes Raw when present, so a decoded entity marshals back to the API's JSON.
+func (e BusinessEntity) MarshalJSON() ([]byte, error) {
+	switch {
+	case len(e.Raw) > 0:
+		return e.Raw, nil
+	case e.Company != nil:
+		return json.Marshal(e.Company)
+	case e.Person != nil:
+		return json.Marshal(e.Person)
+	}
+	return []byte("null"), nil
+}
+
 // BusinessSearchData is the data object of a business search response.
 type BusinessSearchData struct {
 	Query    string                 `json:"query,omitempty"`
