@@ -1,0 +1,47 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the main-branch check below needs history
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - name: Verify tag matches version.go
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          SRC="$(sed -n 's/^const Version = "\(.*\)"$/\1/p' version.go)"
+          if [ -z "$SRC" ] || [ "$TAG" != "$SRC" ]; then
+            echo "Tag '$GITHUB_REF_NAME' (=$TAG) and Version '$SRC' in version.go must match"
+            exit 1
+          fi
+          # Prerelease tags are not supported by this workflow
+          case "$TAG" in
+            *-*)
+              echo "Tag '$GITHUB_REF_NAME' is a prerelease; this workflow releases stable versions only"
+              exit 1
+              ;;
+          esac
+      - name: Verify the tagged commit is on main
+        run: |
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "Commit $GITHUB_SHA is not on main; releases must be tagged from main"
+            exit 1
+          fi
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test -race -count=1 ./...
+      - name: Warm the Go module proxy
+        run: GOPROXY=https://proxy.golang.org go list -m "github.com/Octen-Team/octen-go@${GITHUB_REF_NAME}"

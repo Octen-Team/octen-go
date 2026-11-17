@@ -17,7 +17,8 @@ const (
 	apiKeyEnv         = "OCTEN_API_KEY"
 )
 
-// Client is the entry point of the SDK. It is safe for concurrent use.
+// Client is the entry point of the SDK. It is safe for concurrent use; create it with
+// NewClient, because the zero value is not usable.
 type Client struct {
 	// Search serves the web, broad, news, business and Pulse search endpoints.
 	Search *SearchService

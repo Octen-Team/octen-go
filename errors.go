@@ -50,8 +50,8 @@ func (e *APIError) Is(target error) bool {
 
 // TimeoutError reports that one attempt exceeded its timeout.
 //
-// It also matches context.DeadlineExceeded, so check errors.As(err, &*TimeoutError) first
-// to tell an SDK timeout from the deadline of your own context.
+// It also matches context.DeadlineExceeded, so test it with errors.As and a *TimeoutError
+// target before looking for your own context's deadline.
 type TimeoutError struct {
 	Timeout time.Duration
 	Err     error
