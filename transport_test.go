@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -452,34 +453,92 @@ func TestDropMidResponseNotRetried(t *testing.T) {
 }
 
 func TestRedirectNotFollowed(t *testing.T) {
-	target := newFakeServer(t, func(w http.ResponseWriter, r *http.Request, n int) { writeOK(w) })
-	origin := newFakeServer(t, func(w http.ResponseWriter, r *http.Request, n int) {
-		w.Header().Set("Location", target.URL+"/search")
-		w.Header().Set("X-Request-Id", "rid-302")
-		w.WriteHeader(302)
-	})
-	tr, rec := testTransport(origin.URL, nil)
-	_, err := post(tr, 5*time.Second)
-	var apiErr *APIError
-	if !errors.As(err, &apiErr) {
-		t.Fatalf("err = %v, want *APIError", err)
-	}
-	want := "HTTP 302 redirect to " + target.URL + "/search; redirects are not followed, check baseURL"
-	if apiErr.Message != want || apiErr.StatusCode != 302 || apiErr.RequestID != "rid-302" {
-		t.Fatalf("got %d %q (rid %q), want 302 %q", apiErr.StatusCode, apiErr.Message, apiErr.RequestID, want)
-	}
-	if origin.hits.Load() != 1 || target.hits.Load() != 0 || len(rec.got()) != 0 {
-		t.Fatalf("origin = %d, target = %d, sleeps = %d; want 1, 0, 0", origin.hits.Load(), target.hits.Load(), len(rec.got()))
+	for _, status := range []int{301, 302, 303, 307, 308} {
+		status := status
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			target := newFakeServer(t, func(w http.ResponseWriter, r *http.Request, n int) { writeOK(w) })
+			origin := newFakeServer(t, func(w http.ResponseWriter, r *http.Request, n int) {
+				w.Header().Set("Location", target.URL+"/search")
+				w.Header().Set("X-Request-Id", "rid-redirect")
+				w.WriteHeader(status)
+			})
+			tr, rec := testTransport(origin.URL, nil)
+			_, err := post(tr, 5*time.Second)
+			var apiErr *APIError
+			if !errors.As(err, &apiErr) {
+				t.Fatalf("err = %v, want *APIError", err)
+			}
+			want := "HTTP " + strconv.Itoa(status) + " redirect to " + target.URL + "/search; redirects are not followed, check baseURL"
+			if apiErr.Message != want || apiErr.StatusCode != status || apiErr.RequestID != "rid-redirect" {
+				t.Fatalf("got %d %q (rid %q), want %d %q", apiErr.StatusCode, apiErr.Message, apiErr.RequestID, status, want)
+			}
+			if origin.hits.Load() != 1 || target.hits.Load() != 0 || len(rec.got()) != 0 {
+				t.Fatalf("origin = %d, target = %d, sleeps = %d; want 1, 0, 0", origin.hits.Load(), target.hits.Load(), len(rec.got()))
+			}
+		})
 	}
 
 	t.Run("no location", func(t *testing.T) {
 		s := newFakeServer(t, func(w http.ResponseWriter, r *http.Request, n int) { w.WriteHeader(307) })
 		tr, _ := testTransport(s.URL, nil)
 		_, err := post(tr, 5*time.Second)
+		var apiErr *APIError
 		if !errors.As(err, &apiErr) || apiErr.Message != "HTTP 307 redirect; redirects are not followed, check baseURL" {
 			t.Fatalf("err = %v", err)
 		}
 	})
+}
+
+func TestRetryReplaysBodyAndHeaders(t *testing.T) {
+	var mu sync.Mutex
+	var seen []seenRequest
+	var hits atomic.Int32
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		seen = append(seen, seenRequest{body: string(b), header: r.Header.Clone()})
+		mu.Unlock()
+		if hits.Add(1) <= 2 {
+			w.WriteHeader(503)
+			return
+		}
+		writeOK(w)
+	}))
+	defer s.Close()
+	tr, _ := testTransport(s.URL, nil)
+	const body = `{"query":"replay me"}`
+	if _, err := postBody(tr, context.Background(), []byte(body), 5*time.Second, nil); err != nil {
+		t.Fatalf("post: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(seen) != 3 {
+		t.Fatalf("server saw %d requests, want 3", len(seen))
+	}
+	for i, r := range seen {
+		if r.body != body || r.header.Get("X-Api-Key") != "test-key" || r.header.Get("User-Agent") != "octen-go-sdk/"+Version {
+			t.Errorf("attempt %d: body %q, x-api-key %q, User-Agent %q", i+1, r.body, r.header.Get("X-Api-Key"), r.header.Get("User-Agent"))
+		}
+	}
+}
+
+// Both attempts take 200 ms, more than the 300 ms timeout together but not each.
+func TestEachAttemptGetsFullTimeout(t *testing.T) {
+	s := newFakeServer(t, func(w http.ResponseWriter, r *http.Request, n int) {
+		time.Sleep(200 * time.Millisecond)
+		if n == 1 {
+			w.WriteHeader(503)
+			return
+		}
+		writeOK(w)
+	})
+	tr, _ := testTransport(s.URL, nil)
+	if _, err := post(tr, 300*time.Millisecond); err != nil {
+		t.Fatalf("err = %v, want success on the second attempt", err)
+	}
+	if got := s.hits.Load(); got != 2 {
+		t.Fatalf("server saw %d requests, want 2", got)
+	}
 }
 
 type countingRoundTripper struct {

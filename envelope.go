@@ -95,8 +95,8 @@ func extractRequestID(h http.Header, parsed any) string {
 }
 
 // retryAfterRounded parses Retry-After and rounds up to whole seconds, saturating on overflow.
-func retryAfterRounded(h http.Header) *time.Duration {
-	d, ok := parseRetryAfter(h.Get("Retry-After"), time.Now())
+func retryAfterRounded(h http.Header, now time.Time) *time.Duration {
+	d, ok := parseRetryAfter(h.Get("Retry-After"), now)
 	if !ok {
 		return nil
 	}
@@ -144,7 +144,7 @@ func judgeResponse(status int, h http.Header, body []byte) (*APIError, map[strin
 		Body:       body,
 	}
 	if status == 429 {
-		e.RetryAfter = retryAfterRounded(h)
+		e.RetryAfter = retryAfterRounded(h, time.Now())
 	}
 	return e, nil
 }

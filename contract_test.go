@@ -390,3 +390,28 @@ func TestDescriberShapeRules(t *testing.T) {
 		t.Errorf("goFieldName(linkedin_url) = %s", got)
 	}
 }
+
+// Every SDK method must be covered by contractCases, and nothing else may be listed there.
+func TestContractCoversEverySDKMethod(t *testing.T) {
+	if n := reflect.TypeOf(&SearchService{}).NumMethod() + reflect.TypeOf(&PlaceSearchService{}).NumMethod(); n != len(sixCalls) {
+		t.Fatalf("SDK has %d methods but sixCalls lists %d; add the new method to both tables", n, len(sixCalls))
+	}
+	rec := newRecorder(t)
+	c := newTestClient(t, rec.URL)
+	called := map[string]bool{}
+	for _, ep := range sixCalls {
+		if err := ep.call(c); err != nil {
+			t.Fatalf("%s: %v", ep.path, err)
+		}
+	}
+	for _, r := range rec.requests() {
+		called[r.path] = true
+	}
+	listed := map[string]bool{}
+	for _, cc := range contractCases {
+		listed[cc.path] = true
+	}
+	if !reflect.DeepEqual(called, listed) {
+		t.Fatalf("paths the SDK calls %v differ from contractCases %v", called, listed)
+	}
+}

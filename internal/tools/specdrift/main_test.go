@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,8 +21,8 @@ func runWith(t *testing.T, url, snapshot string) (int, string, string) {
 	return code, out.String(), errOut.String()
 }
 
-// mutated writes a copy of the snapshot with one extra property on the named schema.
-func mutated(t *testing.T, schema string) string {
+// edited writes a copy of the snapshot after change has edited the named schema's properties.
+func edited(t *testing.T, schema string, change func(props map[string]any)) string {
 	t.Helper()
 	data, err := os.ReadFile(snapshotPath)
 	if err != nil {
@@ -30,17 +32,18 @@ func mutated(t *testing.T, schema string) string {
 	if err := json.Unmarshal(data, &doc); err != nil {
 		t.Fatal(err)
 	}
-	props := doc["components"].(map[string]any)["schemas"].(map[string]any)[schema].(map[string]any)["properties"].(map[string]any)
-	props["brand_new_field"] = map[string]any{"type": "string"}
+	change(doc["components"].(map[string]any)["schemas"].(map[string]any)[schema].(map[string]any)["properties"].(map[string]any))
 	out, err := json.Marshal(doc)
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(t.TempDir(), "live.json")
-	if err := os.WriteFile(path, out, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return path
+	return writeFile(t, string(out))
+}
+
+// mutated writes a copy of the snapshot with one extra property on the named schema.
+func mutated(t *testing.T, schema string) string {
+	t.Helper()
+	return edited(t, schema, func(props map[string]any) { props["brand_new_field"] = map[string]any{"type": "string"} })
 }
 
 func TestIdenticalSpecsExitZero(t *testing.T) {
@@ -127,4 +130,45 @@ func writeFile(t *testing.T, content string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func TestDeletedResponseFieldIsDrift(t *testing.T) {
+	live := edited(t, "PulseSearchResult", func(props map[string]any) { delete(props, "favicon") })
+	code, _, errOut := runWith(t, live, snapshotPath)
+	if code != 1 || !strings.Contains(errOut, "/pulse-search response") || !strings.Contains(errOut, "favicon") {
+		t.Fatalf("exit %d, want 1 naming the response field favicon; stderr: %s", code, errOut)
+	}
+}
+
+func TestChangedEnumValueIsDrift(t *testing.T) {
+	live := edited(t, "WebSearchOptions", func(props map[string]any) {
+		props["safesearch"].(map[string]any)["enum"] = []any{"off", "moderate"}
+	})
+	code, _, errOut := runWith(t, live, snapshotPath)
+	if code != 1 || !strings.Contains(errOut, "safesearch") {
+		t.Fatalf("exit %d, want 1 naming safesearch; stderr: %s", code, errOut)
+	}
+}
+
+func TestHTTPFetch(t *testing.T) {
+	snapshot, err := os.ReadFile(snapshotPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/openapi.json" {
+			w.Header().Set("Content-Type", "text/html")
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte("<html>not found</html>"))
+			return
+		}
+		_, _ = w.Write(snapshot)
+	}))
+	defer s.Close()
+	if code, _, errOut := runWith(t, s.URL+"/missing", snapshotPath); code != 2 || !strings.Contains(errOut, "HTTP 404") {
+		t.Errorf("404: exit %d, want 2; stderr: %s", code, errOut)
+	}
+	if code, out, errOut := runWith(t, s.URL+"/openapi.json", snapshotPath); code != 0 || !strings.Contains(out, "No drift") {
+		t.Errorf("identical snapshot over HTTP: exit %d, want 0; stderr: %s", code, errOut)
+	}
 }

@@ -154,6 +154,19 @@ func TestSharedErrorCases(t *testing.T) {
 
 // Behaviour beyond the shared cases, mirroring envelope.ts semantics.
 func TestJudgeResponseEdges(t *testing.T) {
+	t.Run("503 Retry-After is not reported", func(t *testing.T) {
+		e, _ := judgeResponse(503, http.Header{"Retry-After": {"5"}}, []byte("busy"))
+		if e == nil || e.RetryAfter != nil {
+			t.Fatalf("got %+v, want RetryAfter nil", e)
+		}
+	})
+	t.Run("Retry-After HTTP date 1.2s ahead rounds up to exactly 2s", func(t *testing.T) {
+		at := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
+		h := http.Header{"Retry-After": {at.Format(http.TimeFormat)}}
+		if got := retryAfterRounded(h, at.Add(-1200*time.Millisecond)); got == nil || *got != 2*time.Second {
+			t.Fatalf("got %v, want 2s", got)
+		}
+	})
 	t.Run("tiny exponent code underflows to zero and succeeds", func(t *testing.T) {
 		if e, _ := judgeResponse(200, nil, []byte(`{"code":1e-999}`)); e != nil {
 			t.Fatalf("got %v", e)
