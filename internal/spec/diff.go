@@ -16,8 +16,8 @@ const (
 )
 
 // Diff compares SDK tree a with spec tree b; paths start with "." (".a[]{company}.b").
-// Requests compare names, kinds, enums and required; responses compare names and
-// nullability, where a spec-nullable field needs an SDK type that can hold null.
+// Requests compare names, kinds, enums and required; responses compare names, kinds
+// and nullability, where a spec-nullable field needs an SDK type that can hold null.
 func Diff(a, b *Object, side Side) []string {
 	var out []string
 	diffObject(side, a, b, "", &out)
@@ -88,6 +88,10 @@ func diffSchema(side Side, a, b *Schema, path string, out *[]string) {
 		}
 	case isScalar(b.Kind) && (isScalar(a.Kind) || a.Kind == KindRaw):
 		if side == Response {
+			// Raw holds anything and float64 decodes any integer; other mismatches fail Go decoding.
+			if a.Kind != KindRaw && a.Kind != b.Kind && !(a.Kind == KindNumber && b.Kind == KindInteger) {
+				add(out, path, "type mismatch (sdk %s, spec %s)", a.Kind, b.Kind)
+			}
 			return
 		}
 		if a.Kind != b.Kind {

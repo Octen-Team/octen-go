@@ -105,6 +105,8 @@ const resSchemas = `{
 		"request_id":{"type":"string"},
 		"data":{"type":"object","properties":{
 			"warning":{"type":"string","nullable":true},
+			"latency":{"type":"number"},
+			"count":{"type":"integer"},
 			"attrs":{"type":"object"},
 			"results":{"type":"array","items":{"type":"object","properties":{"title":{"type":"string"}}}},
 			"entities":{"type":"array","items":{"$ref":"#/components/schemas/BusinessEntity"}}}}}}
@@ -116,8 +118,10 @@ func goodRes() *Object {
 		"request_id": {Kind: KindString},
 		"data": {Kind: KindObject, Nullable: true, Object: obj(nil, map[string]*Schema{
 			"warning": {Kind: KindString, Nullable: true},
+			"latency": {Kind: KindNumber},
+			"count":   {Kind: KindInteger},
 			"attrs":   {Kind: KindObject, Nullable: true, Object: &Object{FreeForm: true}},
-			"results": {Kind: KindArray, Nullable: true, Items: objSchema(obj(nil, map[string]*Schema{"title": {Kind: KindNumber}}))},
+			"results": {Kind: KindArray, Nullable: true, Items: objSchema(obj(nil, map[string]*Schema{"title": str()}))},
 			"entities": {Kind: KindArray, Nullable: true, Items: &Schema{Kind: KindUnion, Tag: "type", Variants: map[string]*Object{
 				"company": obj(nil, map[string]*Schema{"type": str(), "name": str()}),
 				"person":  obj(nil, map[string]*Schema{"type": str(), "title": str()}),
@@ -128,7 +132,6 @@ func goodRes() *Object {
 
 func TestDiffResponse(t *testing.T) {
 	spec := mustFlatten(t, parse(t, resSchemas), "Res", Response)
-	// Scalar kinds are not compared on responses (results[].title is number vs string here).
 	if got := Diff(goodRes(), spec, Response); len(got) != 0 {
 		t.Fatalf("matching structure: %q", got)
 	}
@@ -141,6 +144,26 @@ func TestDiffResponse(t *testing.T) {
 	a = goodRes()
 	a.Properties["msg"] = str()
 	wantOne(t, Diff(a, spec, Response), ".msg", MsgSDKOnly)
+
+	// A wrong scalar kind makes Go decoding fail, so responses compare kinds too.
+	a = goodRes()
+	data(a).Properties["latency"] = &Schema{Kind: KindInteger}
+	wantOne(t, Diff(a, spec, Response), ".data.latency", "type mismatch (sdk integer, spec number)")
+
+	a = goodRes()
+	data(a).Properties["count"] = str()
+	wantOne(t, Diff(a, spec, Response), ".data.count", "type mismatch (sdk string, spec integer)")
+
+	a = goodRes()
+	data(a).Properties["results"].Items.Object.Properties["title"] = &Schema{Kind: KindBoolean}
+	wantOne(t, Diff(a, spec, Response), ".data.results[].title", "type mismatch (sdk boolean, spec string)")
+
+	// A float64 decodes any JSON integer, so an SDK number on a spec integer is fine.
+	a = goodRes()
+	data(a).Properties["count"] = &Schema{Kind: KindNumber}
+	if got := Diff(a, spec, Response); len(got) != 0 {
+		t.Errorf("number on integer: %q", got)
+	}
 
 	a = goodRes()
 	data(a).Properties["warning"] = str()
