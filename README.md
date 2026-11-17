@@ -182,7 +182,7 @@ Each method takes optional `octen.RequestOption` values after the params:
 | Option | Meaning |
 |---|---|
 | `octen.WithRequestTimeout(d)` | Timeout of each attempt of this call. Precedence: this option, then an explicit client `WithTimeout`, then the endpoint default (120 s for Broad Search, 30 s otherwise) |
-| `octen.WithRequestHeader(name, value)` | Extra header for this call, replacing a client header of the same name. `x-api-key` is refused with a `*ValidationError`; the key only comes from `WithAPIKey` |
+| `octen.WithRequestHeader(name, value)` | Extra header for this call, replacing a client header of the same name. `x-api-key` is refused with a `*ValidationError`; the key only comes from `WithAPIKey` or the `OCTEN_API_KEY` environment variable |
 
 There is no per-call cancellation option: pass a `context.Context` and cancel it.
 
@@ -243,7 +243,7 @@ if err != nil {
 		// Check this first: an SDK timeout also satisfies errors.Is(err, context.DeadlineExceeded).
 		log.Println("attempt timed out after", timeoutErr.Timeout)
 	case errors.As(err, &connErr):
-		// Before the context check: an http.Client.Timeout also satisfies context.DeadlineExceeded.
+		// Before the context check: on Go 1.23 and newer an http.Client.Timeout also satisfies context.DeadlineExceeded.
 		log.Println("network error:", connErr.Err)
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
 		// Your own context ended.
@@ -263,9 +263,9 @@ if err != nil {
 _ = resp
 ```
 
-Check for `*TimeoutError` with `errors.As` before anything else. `errors.Is(err, context.DeadlineExceeded)` is also true for it, and for a `*ConnectionError` caused by a non-zero `http.Client.Timeout`; only the `*TimeoutError` and `*ConnectionError` targets tell those apart from the deadline of a context you passed in.
+Check for `*TimeoutError` with `errors.As` before anything else. `errors.Is(err, context.DeadlineExceeded)` is also true for it, and, on Go 1.23 and newer, for a `*ConnectionError` caused by a non-zero `http.Client.Timeout`; only the `*TimeoutError` and `*ConnectionError` targets tell those apart from the deadline of a context you passed in.
 
-`APIError.Message` is taken from the response body's `msg`, `message`, `detail` or `error` field (the first non-empty string, in that order; when `error` is an object, the same keys are searched inside it), else the first 500 characters of the body, else `HTTP <status>`. A redirect (3xx) instead gets a message saying that redirects are not followed and to check the base URL. `RequestID` comes from the `x-request-id` header, else the body's `request_id`, and is empty when the response has neither; quote it when contacting support. `Error()` reads `octen: <status> <message>` for API errors.
+`APIError.Message` is taken from the response body's `msg`, `message`, `detail` or `error` field (the first non-empty string, in that order; when `error` is an object, the same keys are searched inside it), else the first 500 UTF-16 code units of the body (characters for most text), else `HTTP <status>`. A redirect (3xx) instead gets a message saying that redirects are not followed and to check the base URL. `RequestID` comes from the `x-request-id` header, else the body's `request_id`, and is empty when the response has neither; quote it when contacting support. `Error()` reads `octen: <status> <message>` for API errors.
 
 ## Retries and timeouts
 
@@ -285,7 +285,7 @@ Check for `*TimeoutError` with `errors.As` before anything else. `errors.Is(err,
 
 **Timeouts.** Each attempt gets its own timeout, which covers connecting, sending, and reading the whole response body. Precedence: `WithRequestTimeout`, then an explicit `WithTimeout`, then the endpoint default (30 s; 120 s for Broad Search).
 
-**`http.Client.Timeout`.** If you pass a client with `WithHTTPClient`, leave its `Timeout` at 0 and use the SDK timeouts instead. A non-zero `Timeout` also applies on top of them; when it fires it surfaces as a `*ConnectionError`, not a `*TimeoutError`, it is never retried (not even while dialling), and it also satisfies `errors.Is(err, context.DeadlineExceeded)`.
+**`http.Client.Timeout`.** If you pass a client with `WithHTTPClient`, leave its `Timeout` at 0 and use the SDK timeouts instead. A non-zero `Timeout` also applies on top of them; when it fires it surfaces as a `*ConnectionError`, not a `*TimeoutError`, it is never retried (not even while dialling), and on Go 1.23 and newer it also satisfies `errors.Is(err, context.DeadlineExceeded)`.
 
 **Idempotency-Key.** Do not add an `Idempotency-Key` or `X-Idempotency-Key` header with `WithHeader` or `WithRequestHeader`. Go's `net/http` treats a POST that carries either one as replayable and may resend it on its own when a reused connection turns out to be broken, outside the SDK's retry rules. The API does not support idempotency keys, so such a replay can bill the request twice.
 
@@ -330,7 +330,7 @@ Everything else that differs follows from Go: methods take a `context.Context` i
 
 The SDK follows semantic versioning. Before 1.0, a minor release may contain incompatible changes; they are listed in [CHANGELOG.md](CHANGELOG.md). Published versions are permanent in the Go module proxy and cannot be deleted; a bad release is withdrawn by adding a `retract` directive to `go.mod` in a later release.
 
-To release, tag `vX.Y.Z` on `main` after CI is green; the release workflow reruns the CI checks on Go 1.22 and the latest Go, checks the tag against `octen.Version` and that the commit is on `main`, then warms the module proxy.
+To release, tag `vX.Y.Z` on `main` after CI is green; the release workflow reruns the CI checks (including staticcheck on the latest Go) on Go 1.22 and the latest Go, checks the tag against `octen.Version` and that the commit is on `main`, then warms the module proxy.
 
 ## Development
 

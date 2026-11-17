@@ -170,7 +170,7 @@ type PersonEntity struct {
 	News            []BusinessNewsItem     `json:"news,omitempty"`
 }
 
-// BusinessEntity is a company or person card. Raw always holds the original JSON; an
+// BusinessEntity is a company or person card. Raw holds the original JSON for decoded entities; an
 // unknown or missing type fills only Type and Raw, so new variants never break decoding.
 type BusinessEntity struct {
 	Type    string

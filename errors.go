@@ -17,7 +17,8 @@ var (
 )
 
 // APIError is returned when the API answers with a non-2xx status, or with a 2xx
-// whose body is not a successful envelope.
+// whose body is not a successful envelope or cannot be decoded into the typed
+// response (Message then starts with "decode response:").
 type APIError struct {
 	StatusCode int
 	Code       *float64
@@ -65,7 +66,8 @@ func (e *TimeoutError) Unwrap() error { return e.Err }
 // Is keeps the DeadlineExceeded match independent of how net/http wraps the cause.
 func (e *TimeoutError) Is(target error) bool { return target == context.DeadlineExceeded }
 
-// ConnectionError wraps a network failure that is not a timeout or cancellation.
+// ConnectionError wraps a network failure other than an SDK timeout or a cancelled context;
+// a non-zero http.Client.Timeout also surfaces as a ConnectionError.
 type ConnectionError struct {
 	Err error
 }

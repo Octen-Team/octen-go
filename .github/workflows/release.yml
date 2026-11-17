@@ -30,6 +30,11 @@ jobs:
         run: |
           go mod tidy
           git diff --exit-code
+      - name: Staticcheck
+        if: matrix.go == 'stable'
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@2026.2.2
+          staticcheck ./...
 
   release:
     needs: test
