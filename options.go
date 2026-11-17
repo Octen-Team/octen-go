@@ -140,8 +140,10 @@ func checkBaseURL(raw string) (string, error) {
 		return "", bad("baseURL must not contain a fragment.")
 	}
 	u, err := url.Parse(raw)
-	scheme := strings.ToLower(u.Scheme)
-	if err != nil || (scheme != "http" && scheme != "https") || u.Hostname() == "" {
+	if err != nil {
+		return "", bad("baseURL must be an absolute http(s) URL.")
+	}
+	if scheme := strings.ToLower(u.Scheme); (scheme != "http" && scheme != "https") || u.Hostname() == "" {
 		return "", bad("baseURL must be an absolute http(s) URL.")
 	}
 	if u.User != nil {
