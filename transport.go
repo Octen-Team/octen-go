@@ -62,6 +62,15 @@ type attemptResult struct {
 
 // post sends body as JSON and returns the raw response body of a successful envelope.
 func (t *transport) post(ctx context.Context, path string, body []byte, timeout time.Duration, extra http.Header) ([]byte, error) {
+	res, err := t.postResponse(ctx, path, body, timeout, extra)
+	if err != nil {
+		return nil, err
+	}
+	return res.body, nil
+}
+
+// postResponse is post that also keeps the status and headers of the successful response.
+func (t *transport) postResponse(ctx context.Context, path string, body []byte, timeout time.Duration, extra http.Header) (*attemptResult, error) {
 	url := t.baseURL + "/" + strings.TrimLeft(path, "/")
 	header := t.buildHeaders(extra)
 
@@ -79,7 +88,7 @@ func (t *transport) post(ctx context.Context, path string, body []byte, timeout 
 		} else {
 			apiErr, _ := judgeResponse(res.status, res.header, res.body)
 			if apiErr == nil {
-				return res.body, nil
+				return &res, nil
 			}
 			if res.status >= 300 && res.status < 400 {
 				return nil, redirectError(apiErr, res.header)

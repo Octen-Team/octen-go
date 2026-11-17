@@ -578,3 +578,34 @@ func TestHTTP200NonZeroCodeNotRetried(t *testing.T) {
 		t.Fatalf("requests = %d, sleeps = %d; want 1, 0", got, len(rec.got()))
 	}
 }
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// A dial error caused by the caller's own cancellation must surface as that cancellation
+// and not as a ConnectionError, which would also be eligible for a retry. http.Transport
+// itself prefers ctx.Err() over a racing dial error, so a RoundTripper pins the dial error.
+func TestCancelDuringDialIsNotConnectionError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var dials atomic.Int32
+	rt := roundTripFunc(func(*http.Request) (*http.Response, error) {
+		dials.Add(1)
+		cancel()
+		return nil, &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connection refused")}
+	})
+	tr, rec := testTransport("http://127.0.0.1:1", &http.Client{Transport: rt})
+	tr.maxRetries = 0
+	_, err := tr.post(ctx, "/search", []byte(`{}`), 5*time.Second, nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	var ce *ConnectionError
+	if errors.As(err, &ce) {
+		t.Fatalf("caller cancellation reported as *ConnectionError: %v", err)
+	}
+	if got := dials.Load(); got != 1 || len(rec.got()) != 0 {
+		t.Fatalf("dials = %d, sleeps = %d; want 1, 0", got, len(rec.got()))
+	}
+}
