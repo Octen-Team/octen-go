@@ -27,6 +27,11 @@ var contractCases = []contractCase{
 	{"/business-search", "BusinessSearchRequest", reflect.TypeOf(BusinessSearchParams{}), "BusinessSearchResponse", reflect.TypeOf(BusinessSearchResponse{})},
 	{"/pulse-search", "PulseSearchRequest", reflect.TypeOf(PulseSearchParams{}), "PulseSearchResponse", reflect.TypeOf(PulseSearchResponse{})},
 	{"/place-search", "PlaceSearchRequest", reflect.TypeOf(PlaceSearchParams{}), "PlaceSearchResponse", reflect.TypeOf(PlaceSearchResponse{})},
+	// The reference serves Web Search Premier with the same schemas as /search.
+	{"/search-premier", "SearchRequest", reflect.TypeOf(SearchParams{}), "SearchResponse", reflect.TypeOf(SearchResponse{})},
+	{"/image-search", "ImageSearchRequest", reflect.TypeOf(ImageSearchParams{}), "ImageSearchResponse", reflect.TypeOf(ImageSearchResponse{})},
+	{"/video-search", "VideoSearchRequest", reflect.TypeOf(VideoSearchParams{}), "VideoSearchResponse", reflect.TypeOf(VideoSearchResponse{})},
+	{"/design-search", "DesignSearchRequest", reflect.TypeOf(DesignSearchParams{}), "DesignSearchResponse", reflect.TypeOf(DesignSearchResponse{})},
 }
 
 // goUnion describes a Go type that decodes a discriminated OpenAPI oneOf.
@@ -190,14 +195,16 @@ func (d *describer) object(t reflect.Type, path string, stack []reflect.Type) *s
 		}
 		omitempty := hasOption(opts, "omitempty")
 		if d.side == spec.Request {
-			k := f.Type.Kind()
-			optionalShape := k == reflect.Ptr || k == reflect.Slice
-			switch {
-			case optionalShape && !omitempty:
+			// A slice without omitempty is a required array; a forgotten omitempty on an
+			// optional slice then shows up as a required mismatch against the spec.
+			switch k := f.Type.Kind(); {
+			case k == reflect.Ptr && !omitempty:
 				d.fail(p, "optional request field needs omitempty")
-			case !optionalShape && omitempty:
+			case k == reflect.Slice && !omitempty:
+				obj.Required = append(obj.Required, name)
+			case k != reflect.Ptr && k != reflect.Slice && omitempty:
 				d.fail(p, "optional request field must be a pointer or a slice")
-			case !optionalShape:
+			case k != reflect.Ptr && k != reflect.Slice:
 				obj.Required = append(obj.Required, name)
 			}
 		}
@@ -351,6 +358,7 @@ func TestDescriberShapeRules(t *testing.T) {
 		WrongName *string `json:"right_name,omitempty"`
 		NoTag     *string
 		Tags      []string `json:"tags,omitempty" enum:"x,y"`
+		Inputs    []string `json:"inputs"`
 	}
 	type badRes struct {
 		Status string `json:"status,omitempty" enum:"open"`
@@ -381,8 +389,8 @@ func TestDescriberShapeRules(t *testing.T) {
 			if got := obj.Properties["tags"].Items.Enum; !reflect.DeepEqual(got, []string{"x", "y"}) {
 				t.Errorf("slice enum tag went to items as %v", got)
 			}
-			if len(obj.Required) != 0 {
-				t.Errorf("required = %v, want none", obj.Required)
+			if !reflect.DeepEqual(obj.Required, []string{"inputs"}) {
+				t.Errorf("required = %v, want only the slice without omitempty", obj.Required)
 			}
 		}
 	}
@@ -393,13 +401,13 @@ func TestDescriberShapeRules(t *testing.T) {
 
 // Every SDK method must be covered by contractCases, and nothing else may be listed there.
 func TestContractCoversEverySDKMethod(t *testing.T) {
-	if n := reflect.TypeOf(&SearchService{}).NumMethod() + reflect.TypeOf(&PlaceSearchService{}).NumMethod(); n != len(sixCalls) {
-		t.Fatalf("SDK has %d methods but sixCalls lists %d; add the new method to both tables", n, len(sixCalls))
+	if n := reflect.TypeOf(&SearchService{}).NumMethod() + reflect.TypeOf(&PlaceSearchService{}).NumMethod(); n != len(endpointCalls) {
+		t.Fatalf("SDK has %d methods but endpointCalls lists %d; add the new method to both tables", n, len(endpointCalls))
 	}
 	rec := newRecorder(t)
 	c := newTestClient(t, rec.URL)
 	called := map[string]bool{}
-	for _, ep := range sixCalls {
+	for _, ep := range endpointCalls {
 		if err := ep.call(c); err != nil {
 			t.Fatalf("%s: %v", ep.path, err)
 		}

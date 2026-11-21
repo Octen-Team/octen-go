@@ -29,6 +29,10 @@ func fakeAPI(t *testing.T) (*httptest.Server, func() []seen) {
 		"/business-search": `{"code":0,"msg":"ok","request_id":"rid-business-search","data":{"query":"q","results":[{"title":"b","url":"https://example.com/b"}]}}`,
 		"/pulse-search":    `{"code":0,"msg":"ok","request_id":"rid-pulse-search","data":{"query":"q","results":[]},"meta":{"usage":{"billed_mode":"lite"}}}`,
 		"/place-search":    `{"code":0,"msg":"ok","request_id":"rid-place-search","data":{"query":"q","places":[{"name":"p"}]}}`,
+		"/search-premier":  `{"code":0,"msg":"ok","request_id":"rid-search-premier","data":{"query":"q","results":[{"url":"https://example.com/p"}]},"meta":{"result_type":"dynamic"}}`,
+		"/image-search":    `{"code":0,"msg":"","request_id":"rid-image-search","data":{"results":[{"url":"https://example.com/i.jpg","width":10}]}}`,
+		"/video-search":    `{"code":0,"msg":"","request_id":"rid-video-search","data":{"results":[{"url":"https://example.com/v","duration_seconds":78}]}}`,
+		"/design-search":   `{"code":0,"msg":"success","request_id":"rid-design-search","data":{"images":[{"type":"slide","group":{"group_id":"g","position":1,"total":2}}],"results":[]}}`,
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -121,15 +125,17 @@ func TestConsumerModule(t *testing.T) {
 	for _, want := range []string{
 		"OK search rid-search", "OK broad-search rid-broad-search", "OK news-search rid-news-search",
 		"OK business-search rid-business-search", "OK pulse-search rid-pulse-search",
-		"OK place-search rid-place-search", "OK error-path 400 rid-bad", "OK validation query",
+		"OK place-search rid-place-search", "OK search-premier rid-search-premier", "OK image-search rid-image-search",
+		"OK video-search rid-video-search", "OK design-search rid-design-search", "OK error-path 400 rid-bad", "OK validation query",
 	} {
 		if !strings.Contains(string(out), want) {
 			t.Errorf("output lacks %q", want)
 		}
 	}
 
-	// Six successes, then the 400; the blank query must not reach the server.
-	wantPaths := []string{"/search", "/broad-search", "/news-search", "/business-search", "/pulse-search", "/place-search", "/search"}
+	// Ten successes, then the 400; the blank query must not reach the server.
+	wantPaths := []string{"/search", "/broad-search", "/news-search", "/business-search", "/pulse-search", "/place-search",
+		"/search-premier", "/image-search", "/video-search", "/design-search", "/search"}
 	got := requests()
 	if len(got) != len(wantPaths) {
 		t.Fatalf("server saw %d requests, want %d: %+v", len(got), len(wantPaths), got)

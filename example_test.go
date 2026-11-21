@@ -129,6 +129,77 @@ func ExamplePlaceSearchService_Search() {
 	// Output: Blue Bottle 4.5
 }
 
+func ExampleSearchService_SearchPremier() {
+	srv := fakeAPI(200, `{"code":0,"request_id":"req-p","data":{"query":"eu ai act","results":[{"title":"AI Act","url":"https://example.eu/ai-act"}]},"meta":{"result_type":"dynamic"}}`)
+	defer srv.Close()
+	client := newExampleClient(srv)
+
+	resp, err := client.Search.SearchPremier(context.Background(), octen.SearchParams{
+		Query:      "eu ai act",
+		ResultType: octen.String("dynamic"),
+		Count:      octen.Int(3),
+	})
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(resp.Meta.ResultType, resp.Data.Results[0].URL)
+	// Output: dynamic https://example.eu/ai-act
+}
+
+func ExampleSearchService_ImageSearch() {
+	srv := fakeAPI(200, `{"code":0,"request_id":"req-i","data":{"results":[{"title":"Golden retriever","url":"https://example.com/dog.jpg","width":1024,"height":683}]}}`)
+	defer srv.Close()
+	client := newExampleClient(srv)
+
+	// One input per call: a text query, or {Type: "image", URL: octen.String("https://...")}.
+	resp, err := client.Search.ImageSearch(context.Background(), octen.ImageSearchParams{
+		Inputs: []octen.ImageSearchInput{{Type: "text", Data: octen.String("golden retriever")}},
+		Count:  octen.Int(1),
+	})
+	if err != nil {
+		panic(err)
+	}
+	r := resp.Data.Results[0]
+	fmt.Println(r.Title, r.Width, r.Height)
+	// Output: Golden retriever 1024 683
+}
+
+func ExampleSearchService_VideoSearch() {
+	srv := fakeAPI(200, `{"code":0,"request_id":"req-v","data":{"results":[{"title":"Bowline knot","url":"https://example.com/watch","duration_seconds":78}]}}`)
+	defer srv.Close()
+	client := newExampleClient(srv)
+
+	resp, err := client.Search.VideoSearch(context.Background(), octen.VideoSearchParams{
+		Inputs: []octen.VideoSearchInput{{Type: "text", Data: octen.String("how to tie a bowline")}},
+		Count:  octen.Int(1),
+	})
+	if err != nil {
+		panic(err)
+	}
+	r := resp.Data.Results[0]
+	fmt.Println(r.Title, r.DurationSeconds)
+	// Output: Bowline knot 78
+}
+
+func ExampleSearchService_DesignSearch() {
+	srv := fakeAPI(200, `{"code":0,"request_id":"req-d","data":{"query":"pitch deck slide","images":[{"type":"slide","url":"https://example.com/s.png","group":{"group_id":"deck_1","type":"deck","position":19,"total":28}}],"results":[]}}`)
+	defer srv.Close()
+	client := newExampleClient(srv)
+
+	resp, err := client.Search.DesignSearch(context.Background(), octen.DesignSearchParams{
+		Query:     octen.String("pitch deck slide"),
+		Images:    &octen.DesignImageOptions{Count: octen.Int(1)},
+		WebSearch: &octen.DesignWebSearchOptions{Enable: octen.Bool(false)},
+	})
+	if err != nil {
+		panic(err)
+	}
+	img := resp.Data.Images[0]
+	// For the rest of the deck, send DesignSearchParams{Images: &octen.DesignImageOptions{GroupID: octen.String(img.Group.GroupID)}}.
+	fmt.Println(img.Type, img.Group.Position, img.Group.Total)
+	// Output: slide 19 28
+}
+
 func Example_errorHandling() {
 	srv := fakeAPI(401, `{"msg":"invalid api key","request_id":"req-7"}`)
 	defer srv.Close()

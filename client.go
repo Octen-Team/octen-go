@@ -20,7 +20,8 @@ const (
 // Client is the entry point of the SDK. It is safe for concurrent use; create it with
 // NewClient, because the zero value is not usable.
 type Client struct {
-	// Search serves the web, broad, news, business and Pulse search endpoints.
+	// Search serves the web, Web Search Premier, broad, news, business, Pulse, image, video
+	// and design search endpoints.
 	Search *SearchService
 	// PlaceSearch serves the place search endpoint.
 	PlaceSearch *PlaceSearchService
