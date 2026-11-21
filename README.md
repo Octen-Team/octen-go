@@ -19,7 +19,7 @@ It covers ten endpoints: Web Search, Web Search Premier, Broad Search, News Sear
 ## Install
 
 ```bash
-go get github.com/Octen-Team/octen-go@v0.1.0
+go get github.com/Octen-Team/octen-go@v0.2.0
 ```
 
 Create an API key in your Octen account and either pass it with `octen.WithAPIKey` or set the `OCTEN_API_KEY` environment variable. Surrounding whitespace is trimmed from the key.
