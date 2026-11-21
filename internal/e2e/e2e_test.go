@@ -3,6 +3,8 @@
 package e2e
 
 import (
+	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -29,6 +31,10 @@ func fakeAPI(t *testing.T) (*httptest.Server, func() []seen) {
 		"/business-search": `{"code":0,"msg":"ok","request_id":"rid-business-search","data":{"query":"q","results":[{"title":"b","url":"https://example.com/b"}]}}`,
 		"/pulse-search":    `{"code":0,"msg":"ok","request_id":"rid-pulse-search","data":{"query":"q","results":[]},"meta":{"usage":{"billed_mode":"lite"}}}`,
 		"/place-search":    `{"code":0,"msg":"ok","request_id":"rid-place-search","data":{"query":"q","places":[{"name":"p"}]}}`,
+		"/search-premier":  `{"code":0,"msg":"ok","request_id":"rid-search-premier","data":{"query":"q","results":[{"url":"https://example.com/p"}]},"meta":{"result_type":"dynamic"}}`,
+		"/image-search":    `{"code":0,"msg":"","request_id":"rid-image-search","data":{"results":[{"url":"https://example.com/i.jpg","width":10}]}}`,
+		"/video-search":    `{"code":0,"msg":"","request_id":"rid-video-search","data":{"results":[{"url":"https://example.com/v","duration_seconds":78}]}}`,
+		"/design-search":   `{"code":0,"msg":"success","request_id":"rid-design-search","data":{"images":[{"type":"slide","group":{"group_id":"g","position":1,"total":2}}],"results":[]}}`,
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -36,6 +42,11 @@ func fakeAPI(t *testing.T) (*httptest.Server, func() []seen) {
 		got = append(got, seen{r.URL.Path, r.Header.Get("x-api-key"), r.Header.Get("User-Agent")})
 		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
+		if err := checkBody(r.URL.Path, body); err != nil {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			_, _ = io.WriteString(w, `{"code":422,"msg":"fake API: `+err.Error()+`","request_id":"rid-shape"}`)
+			return
+		}
 		if strings.Contains(string(body), `"query":"bad"`) {
 			w.WriteHeader(http.StatusBadRequest)
 			_, _ = io.WriteString(w, `{"code":400,"msg":"bad query","request_id":"rid-bad"}`)
@@ -54,6 +65,59 @@ func fakeAPI(t *testing.T) (*httptest.Server, func() []seen) {
 		defer mu.Unlock()
 		return append([]seen(nil), got...)
 	}
+}
+
+type fakeInput struct {
+	Type string  `json:"type"`
+	URL  *string `json:"url"`
+	Data *string `json:"data"`
+}
+
+// checkInput accepts a text input with data and no url, and, when images are allowed, an image
+// input with exactly one non-empty url or data.
+func checkInput(in fakeInput, images bool) error {
+	nonEmpty := func(s *string) bool { return s != nil && *s != "" }
+	switch {
+	case in.Type == "text" && nonEmpty(in.Data) && in.URL == nil:
+		return nil
+	case in.Type == "image" && images && (in.URL != nil) != (in.Data != nil) && (nonEmpty(in.URL) || nonEmpty(in.Data)):
+		return nil
+	}
+	return errors.New("invalid input")
+}
+
+// checkBody rejects a body without the input its path requires: one valid entry in inputs for
+// image and video search, a query or images.group_id for design search, and a query elsewhere.
+func checkBody(path string, body []byte) error {
+	var b struct {
+		Query  *string     `json:"query"`
+		Inputs []fakeInput `json:"inputs"`
+		Images *struct {
+			GroupID string `json:"group_id"`
+		} `json:"images"`
+	}
+	if err := json.Unmarshal(body, &b); err != nil {
+		return errors.New("body is not a JSON object")
+	}
+	hasQuery := b.Query != nil && *b.Query != ""
+	switch path {
+	case "/image-search", "/video-search":
+		if len(b.Inputs) != 1 || b.Query != nil {
+			return errors.New("want exactly one inputs entry and no query")
+		}
+		if err := checkInput(b.Inputs[0], path == "/image-search"); err != nil {
+			return err
+		}
+	case "/design-search":
+		if b.Inputs != nil || (!hasQuery && (b.Images == nil || b.Images.GroupID == "")) {
+			return errors.New("want a query or images.group_id")
+		}
+	default:
+		if !hasQuery || b.Inputs != nil {
+			return errors.New("want a query")
+		}
+	}
+	return nil
 }
 
 // goCmd runs the local toolchain only, offline: the replace directive means nothing is downloaded.
@@ -121,15 +185,17 @@ func TestConsumerModule(t *testing.T) {
 	for _, want := range []string{
 		"OK search rid-search", "OK broad-search rid-broad-search", "OK news-search rid-news-search",
 		"OK business-search rid-business-search", "OK pulse-search rid-pulse-search",
-		"OK place-search rid-place-search", "OK error-path 400 rid-bad", "OK validation query",
+		"OK place-search rid-place-search", "OK search-premier rid-search-premier", "OK image-search rid-image-search",
+		"OK video-search rid-video-search", "OK design-search rid-design-search", "OK error-path 400 rid-bad", "OK validation query",
 	} {
 		if !strings.Contains(string(out), want) {
 			t.Errorf("output lacks %q", want)
 		}
 	}
 
-	// Six successes, then the 400; the blank query must not reach the server.
-	wantPaths := []string{"/search", "/broad-search", "/news-search", "/business-search", "/pulse-search", "/place-search", "/search"}
+	// Ten successes, then the 400; the blank query must not reach the server.
+	wantPaths := []string{"/search", "/broad-search", "/news-search", "/business-search", "/pulse-search", "/place-search",
+		"/search-premier", "/image-search", "/video-search", "/design-search", "/search"}
 	got := requests()
 	if len(got) != len(wantPaths) {
 		t.Fatalf("server saw %d requests, want %d: %+v", len(got), len(wantPaths), got)
@@ -170,4 +236,45 @@ func main() {
 		t.Fatalf("compile error does not mention Cuont:\n%s", out)
 	}
 	t.Logf("compile error: %s", named)
+}
+
+// The fake API answers only bodies of the shape each endpoint requires, so a call that sends the
+// wrong body to a known path fails the consumer run.
+func TestFakeAPIChecksBodyShape(t *testing.T) {
+	cases := []struct {
+		path, body string
+		ok         bool
+	}{
+		{"/search", `{"query":"q"}`, true},
+		{"/search", `{}`, false},
+		{"/search-premier", `{"query":""}`, false},
+		{"/place-search", `{"query":"q","latitude":1}`, true},
+		{"/image-search", `{"inputs":[{"type":"text","data":"q"}]}`, true},
+		{"/image-search", `{}`, false},
+		{"/image-search", `{"inputs":[]}`, false},
+		{"/image-search", `{"query":"q"}`, false},
+		{"/image-search", `{"inputs":[{"type":"image","url":"https://example.com/a.jpg"}]}`, true},
+		{"/image-search", `{"inputs":[{"type":"image","data":"aGVsbG8="}]}`, true},
+		{"/image-search", `{"inputs":[{"type":"image","url":"https://example.com/a.jpg","data":"aGVsbG8="}]}`, false},
+		{"/image-search", `{"inputs":[{"type":"image","url":""}]}`, false},
+		{"/image-search", `{"inputs":[{"type":"image"}]}`, false},
+		{"/image-search", `{"inputs":[{"type":"text","data":"q","url":"https://example.com/a.jpg"}]}`, false},
+		{"/image-search", `{"inputs":[{"type":"text","data":""}]}`, false},
+		{"/image-search", `{"inputs":[{"type":"audio","data":"q"}]}`, false},
+		{"/video-search", `{"inputs":[{"type":"text","data":"q"}]}`, true},
+		{"/video-search", `{"inputs":[{"type":"text","data":"a"},{"type":"text","data":"b"}]}`, false},
+		{"/video-search", `{"inputs":[{"type":"image","url":"https://example.com/a.jpg"}]}`, false},
+		{"/video-search", `{"inputs":[{"type":"text","data":""}]}`, false},
+		{"/design-search", `{"query":"q"}`, true},
+		{"/design-search", `{"images":{"group_id":"g"}}`, true},
+		{"/design-search", `{"inputs":[{"type":"text","data":"q"}]}`, false},
+		{"/design-search", `{"images":{"group_id":""}}`, false},
+		{"/search", `not json`, false},
+		{"/search", `{"query":"q","inputs":[{"type":"text","data":"q"}]}`, false},
+	}
+	for _, c := range cases {
+		if err := checkBody(c.path, []byte(c.body)); (err == nil) != c.ok {
+			t.Errorf("checkBody(%s, %s) = %v, want ok %v", c.path, c.body, err, c.ok)
+		}
+	}
 }

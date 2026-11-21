@@ -51,8 +51,24 @@ func TestIdenticalSpecsExitZero(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit %d, stderr: %s", code, errOut)
 	}
-	if !strings.Contains(out, "12 request/response schemas") {
-		t.Errorf("stdout = %q, want the count of 12 compared schemas", out)
+	if !strings.Contains(out, "20 request/response schemas") {
+		t.Errorf("stdout = %q, want the count of 20 compared schemas", out)
+	}
+}
+
+// The four endpoints added after the first release are watched like the original six.
+func TestChangeInAddedEndpointIsDrift(t *testing.T) {
+	for schema, want := range map[string]string{
+		"ImageSearchRequest":  "/image-search request",
+		"VideoSearchResponse": "/video-search response",
+		"DesignImageOptions":  "/design-search request",
+		"DesignImageResult":   "/design-search response",
+		"SearchResponse":      "/search-premier response",
+	} {
+		code, _, errOut := runWith(t, mutated(t, schema), snapshotPath)
+		if code != 1 || !strings.Contains(errOut, want) || !strings.Contains(errOut, "brand_new_field") {
+			t.Errorf("%s: exit %d, want 1 naming %q; stderr: %s", schema, code, want, errOut)
+		}
 	}
 }
 
@@ -86,8 +102,8 @@ func TestUnusableInputExitsTwo(t *testing.T) {
 	}
 }
 
-// Schemas outside the six endpoints change often and must not raise the alarm.
-func TestChangeOutsideTheSixEndpointsIsIgnored(t *testing.T) {
+// Schemas outside the watched endpoints change often and must not raise the alarm.
+func TestChangeOutsideTheWatchedEndpointsIsIgnored(t *testing.T) {
 	if code, _, errOut := runWith(t, mutated(t, "ExtractRequest"), snapshotPath); code != 0 {
 		t.Fatalf("exit %d, want 0; stderr: %s", code, errOut)
 	}
@@ -170,5 +186,26 @@ func TestHTTPFetch(t *testing.T) {
 	}
 	if code, out, errOut := runWith(t, s.URL+"/openapi.json", snapshotPath); code != 0 || !strings.Contains(out, "No drift") {
 		t.Errorf("identical snapshot over HTTP: exit %d, want 0; stderr: %s", code, errOut)
+	}
+}
+
+// The SDK enforces a single entry in inputs locally, so a change of its item bounds must be drift
+// although the field comparison ignores minItems and maxItems.
+func TestInputsItemCountChangeIsDrift(t *testing.T) {
+	cases := []struct {
+		schema, want string
+		change       func(inputs map[string]any)
+	}{
+		{"ImageSearchRequest", "/image-search request.inputs", func(in map[string]any) { in["maxItems"] = 2.0 }},
+		{"ImageSearchRequest", "/image-search request.inputs", func(in map[string]any) { delete(in, "minItems") }},
+		{"VideoSearchRequest", "/video-search request.inputs", func(in map[string]any) { delete(in, "maxItems") }},
+		{"VideoSearchRequest", "/video-search request.inputs", func(in map[string]any) { in["minItems"] = 1.0 }},
+	}
+	for _, c := range cases {
+		live := edited(t, c.schema, func(props map[string]any) { c.change(props["inputs"].(map[string]any)) })
+		code, _, errOut := runWith(t, live, snapshotPath)
+		if code != 1 || !strings.Contains(errOut, c.want) || !strings.Contains(errOut, "maxItems") {
+			t.Errorf("%s: exit %d, want 1 naming %q with the item bounds; stderr: %s", c.schema, code, c.want, errOut)
+		}
 	}
 }

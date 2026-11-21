@@ -369,6 +369,156 @@
         }
       }
     },
+    "/search-premier": {
+      "post": {
+        "summary": "Web Search Premier",
+        "description": "Searches the live web with deeper retrieval and reranking, and returns ranked results with model-ready highlights and optional full content. Optional filters narrow sources, time windows, and languages.",
+        "operationId": "search-premier",
+        "x-mint": {
+          "href": "/api-reference/search-premier",
+          "metadata": {
+            "title": "Web Search Premier API Reference",
+            "sidebarTitle": "Web Search Premier"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchRequest"
+              },
+              "examples": {
+                "basic": {
+                  "summary": "Basic Search",
+                  "value": {
+                    "query": "What record did Kendrick Lamar break at the 2026 Grammy Awards?",
+                    "count": 5
+                  }
+                },
+                "domainFiltering": {
+                  "summary": "Domain Filtering + Time Range + Highlights",
+                  "value": {
+                    "query": "summary judgment",
+                    "count": 10,
+                    "time_basis": "published",
+                    "start_time": "2024-01-01T00:00:00+08:00",
+                    "end_time": "2025-01-01T00:00:00+08:00",
+                    "include_domains": [
+                      "uscourts.gov"
+                    ],
+                    "highlight": {
+                      "enable": true,
+                      "max_tokens": 300
+                    },
+                    "full_content": {
+                      "enable": false
+                    },
+                    "format": "text"
+                  }
+                },
+                "fullContent": {
+                  "summary": "Full Content Enabled",
+                  "value": {
+                    "query": "latest WHO guidance on influenza vaccination",
+                    "count": 5,
+                    "full_content": {
+                      "enable": true,
+                      "max_tokens": 1000
+                    }
+                  }
+                },
+                "dynamicResults": {
+                  "summary": "Dynamic Results",
+                  "value": {
+                    "query": "EU AI Act enforcement timeline",
+                    "result_type": "dynamic",
+                    "count": 10
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful search response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                },
+                "example": {
+                  "code": 0,
+                  "msg": "success",
+                  "request_id": "req_abc123def456",
+                  "data": {
+                    "query": "latest WHO guidance on influenza vaccination",
+                    "results": [
+                      {
+                        "title": "Influenza (Seasonal) - World Health Organization (WHO)",
+                        "url": "https://www.who.int/news-room/fact-sheets/detail/influenza-(seasonal)",
+                        "highlight": "WHO recommends annual vaccination for high-risk groups\n\n...\n\nSeasonal influenza vaccination policies vary by region...",
+                        "authors": "World Health Organization",
+                        "time_published": "2024-10-15T00:00:00Z",
+                        "time_last_crawled": "2026-01-20T02:12:34Z",
+                        "favicon": "https://www.who.int/favicon.ico",
+                        "cover_image": {
+                          "url": "https://www.who.int/images/default-source/influenza/seasonal-influenza-cover.jpg",
+                          "description": "Seasonal influenza vaccination"
+                        },
+                        "images": [
+                          {
+                            "url": "https://www.who.int/images/default-source/influenza/influenza-vaccine-vial.jpg",
+                            "description": "A vial of seasonal influenza vaccine."
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "meta": {
+                    "usage": {
+                      "num_search_queries": 1,
+                      "full_content_extra_count": 0
+                    },
+                    "result_type": "standard",
+                    "latency": 237,
+                    "warning": ""
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing parameter query — Returned when a required parameter is missing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "code": 400,
+                  "msg": "Missing parameter query",
+                  "request_id": "req_abc123def456"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/InsufficientBalance"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
     "/news-search": {
       "post": {
         "summary": "News Search",
@@ -1048,6 +1198,329 @@
                 "example": {
                   "code": 400,
                   "msg": "Invalid params. Missing parameter query",
+                  "request_id": "req_abc123def456"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/InsufficientBalance"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/design-search": {
+      "post": {
+        "summary": "Design Search",
+        "description": "Searches for design references that match the query. Each reference is returned as an image result: a screenshot of a web page, page section, app screen, or slide, with its design values. Web results on the same query are returned alongside.",
+        "operationId": "design-search",
+        "x-mint": {
+          "href": "/api-reference/design-search",
+          "metadata": {
+            "title": "Design Search API Reference",
+            "sidebarTitle": "Design Search"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DesignSearchRequest"
+              },
+              "examples": {
+                "basic": {
+                  "summary": "Basic Design Search",
+                  "value": {
+                    "query": "pricing section for a SaaS landing page"
+                  }
+                },
+                "images_only": {
+                  "summary": "Images Only",
+                  "value": {
+                    "query": "iOS onboarding screen",
+                    "images": {
+                      "count": 10
+                    },
+                    "web_search": {
+                      "enable": false
+                    }
+                  }
+                },
+                "group": {
+                  "summary": "Get a Whole Deck",
+                  "value": {
+                    "images": {
+                      "group_id": "deck_3b7f0e92c4a1d85f6e2b9c07a3d4f1e8b5c26a9d0f7e3b1c4a8d2e6f9b0c5a7d",
+                      "count": 30
+                    }
+                  }
+                },
+                "web_results": {
+                  "summary": "Web Results Options",
+                  "value": {
+                    "query": "dark mode color contrast",
+                    "images": {
+                      "count": 5,
+                      "snippet": {
+                        "enable": true,
+                        "max_tokens": 5000
+                      }
+                    },
+                    "web_search": {
+                      "count": 10,
+                      "language": [
+                        "en"
+                      ],
+                      "highlight": {
+                        "enable": true,
+                        "max_tokens": 300
+                      },
+                      "full_content": {
+                        "enable": true,
+                        "max_tokens": 2048
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful design search response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignSearchResponse"
+                },
+                "example": {
+                  "code": 0,
+                  "msg": "success",
+                  "request_id": "req_abc123def456",
+                  "data": {
+                    "query": "pricing section for a SaaS landing page",
+                    "images": [
+                      {
+                        "type": "web_section",
+                        "title": "Simple, transparent pricing",
+                        "description": "A pricing section on a white background with three plan cards side by side; the middle card has a green border and a Most popular badge.",
+                        "url": "https://cdn.octen.ai/octen-public-resource/data/design/web_page/8d2e5c41a07b93f6e1d4c28a5b90f3e7c6a1d2b4/s-004.png?sdd=1&se=2026-11-19T13%3A00%3A00Z&sig=example",
+                        "thumbnail": "https://cdn.octen.ai/octen-public-resource/data/design/thumb/4a1c/4a1c9e07b52d83f6a0e1c7d94b28f5e3.jpg?sdd=1&se=2026-11-19T13%3A00%3A00Z&sig=example",
+                        "source_page": "https://www.example-saas.com/pricing",
+                        "width": 1440,
+                        "height": 860,
+                        "group": {
+                          "group_id": "pg_8d2e5c41a07b93f6e1d4c28a5b90f3e7c6a1d2b4",
+                          "type": "web_page",
+                          "name": "Pricing | Example SaaS",
+                          "position": 4,
+                          "total": 9
+                        },
+                        "design_facts": {
+                          "color": {
+                            "background": {
+                              "$type": "color",
+                              "$value": {
+                                "alpha": 1,
+                                "colorSpace": "srgb",
+                                "components": [
+                                  1,
+                                  1,
+                                  1
+                                ],
+                                "hex": "#ffffff"
+                              }
+                            },
+                            "text": {
+                              "$type": "color",
+                              "$value": {
+                                "alpha": 1,
+                                "colorSpace": "srgb",
+                                "components": [
+                                  0.0627,
+                                  0.0941,
+                                  0.1569
+                                ],
+                                "hex": "#101828"
+                              }
+                            },
+                            "accent": {
+                              "$type": "color",
+                              "$value": {
+                                "alpha": 1,
+                                "colorSpace": "srgb",
+                                "components": [
+                                  0.0863,
+                                  0.6392,
+                                  0.2902
+                                ],
+                                "hex": "#16a34a"
+                              }
+                            }
+                          },
+                          "fontFamily": {
+                            "heading": {
+                              "$type": "fontFamily",
+                              "$value": [
+                                "Inter"
+                              ]
+                            },
+                            "body": {
+                              "$type": "fontFamily",
+                              "$value": [
+                                "Inter"
+                              ]
+                            }
+                          },
+                          "fontSize": {
+                            "heading": {
+                              "$type": "dimension",
+                              "$value": {
+                                "unit": "px",
+                                "value": 40
+                              }
+                            },
+                            "body": {
+                              "$type": "dimension",
+                              "$value": {
+                                "unit": "px",
+                                "value": 16
+                              }
+                            }
+                          },
+                          "radius": {
+                            "default": {
+                              "$type": "dimension",
+                              "$value": {
+                                "unit": "px",
+                                "value": 12
+                              }
+                            }
+                          }
+                        },
+                        "snippet": {
+                          "format": "html",
+                          "code": "<section class=\"pricing\"><h2 class=\"pricing-title\">Simple, transparent pricing</h2><div class=\"plans\"><div class=\"plan\">…</div></div></section>"
+                        }
+                      },
+                      {
+                        "type": "slide",
+                        "title": "Market opportunity",
+                        "description": "A slide with three nested circles on the left labeled TAM, SAM, and SOM, and a figure with a one-line note for each on the right.",
+                        "url": "https://cdn.octen.ai/octen-public-resource/data/design/deck/3b7f0e92c4a1d85f6e2b9c07a3d4f1e8b5c26a9d0f7e3b1c4a8d2e6f9b0c5a7d/p-005.png?sdd=1&se=2026-11-19T13%3A00%3A00Z&sig=example",
+                        "thumbnail": "https://cdn.octen.ai/octen-public-resource/data/design/thumb/9e5b/9e5b2c18f0a74d36b1e8c5a29d07f4b3.jpg?sdd=1&se=2026-11-19T13%3A00%3A00Z&sig=example",
+                        "source_page": "https://www.example-startup.com/files/seed-deck.pptx",
+                        "width": 1920,
+                        "height": 1080,
+                        "group": {
+                          "group_id": "deck_3b7f0e92c4a1d85f6e2b9c07a3d4f1e8b5c26a9d0f7e3b1c4a8d2e6f9b0c5a7d",
+                          "type": "deck",
+                          "name": "Example Startup Seed Deck",
+                          "position": 5,
+                          "total": 14,
+                          "master": {
+                            "width": 1280,
+                            "height": 720,
+                            "majorFont": "Calibri Light",
+                            "minorFont": "Calibri",
+                            "palette": {
+                              "dk1": "#000000",
+                              "lt1": "#FFFFFF",
+                              "dk2": "#0E2841",
+                              "lt2": "#E8E8E8",
+                              "accent1": "#156082",
+                              "accent2": "#E97132",
+                              "accent3": "#196B24",
+                              "accent4": "#0F9ED5",
+                              "accent5": "#A02B93",
+                              "accent6": "#4EA72E",
+                              "hlink": "#467886",
+                              "folHlink": "#96607D"
+                            }
+                          }
+                        },
+                        "design_facts": {
+                          "layoutFacts": {
+                            "aspectRatio": 1.7778,
+                            "elementCount": 12,
+                            "imageCount": 0,
+                            "textCount": 9
+                          },
+                          "styleFacts": {
+                            "fontFamilies": [
+                              "Calibri"
+                            ],
+                            "fontSizes": [
+                              "18pt",
+                              "36pt"
+                            ],
+                            "foregroundColors": [
+                              "#0E2841"
+                            ]
+                          },
+                          "typographyMap": {
+                            "title": {
+                              "fontFamily": "Calibri Light",
+                              "fontSizePt": 36,
+                              "fontWeight": 400
+                            },
+                            "other": {
+                              "color": "#0E2841",
+                              "fontFamily": "Calibri",
+                              "fontSizePt": 18,
+                              "fontWeight": 400
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "results": [
+                      {
+                        "title": "Pricing Page Design: 12 Patterns That Convert",
+                        "url": "https://www.example-design-blog.com/pricing-page-patterns",
+                        "highlight": "Three plans side by side, with the recommended plan raised and outlined, is the most common layout. Keep plan names short and put the price above the feature list.",
+                        "authors": "Example Design Blog",
+                        "time_published": "2026-09-08T00:00:00Z",
+                        "time_last_crawled": "2026-11-02T06:15:00Z",
+                        "favicon": "https://www.example-design-blog.com/favicon.ico",
+                        "cover_image": {
+                          "url": "https://img.example-design-blog.com/pricing-page-patterns/cover.png",
+                          "description": "Three pricing cards side by side"
+                        }
+                      }
+                    ]
+                  },
+                  "meta": {
+                    "usage": {
+                      "num_search_queries": 1
+                    },
+                    "latency": 276
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid or missing parameter.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "code": 400,
+                  "msg": "Invalid params. Param images.count must be at most 100",
                   "request_id": "req_abc123def456"
                 }
               }
@@ -7151,6 +7624,445 @@
           "full_content_extra_count": {
             "type": "integer",
             "description": "Billable full_content results beyond the free allowance."
+          }
+        }
+      },
+      "DesignSearchRequest": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "The search query. Optional when `images.group_id` is set."
+          },
+          "images": {
+            "$ref": "#/components/schemas/DesignImageOptions"
+          },
+          "web_search": {
+            "$ref": "#/components/schemas/DesignWebSearchOptions"
+          }
+        }
+      },
+      "DesignWebSearchOptions": {
+        "type": "object",
+        "description": "Controls the web results. These options apply to the web results only and do not affect the image results.",
+        "properties": {
+          "enable": {
+            "type": "boolean",
+            "default": true,
+            "description": "If true, returns `data.results`."
+          },
+          "count": {
+            "type": "integer",
+            "default": 5,
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Number of web results to return."
+          },
+          "highlight": {
+            "$ref": "#/components/schemas/HighlightOptions"
+          },
+          "full_content": {
+            "$ref": "#/components/schemas/FullContentOptions"
+          },
+          "include_domains": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 60
+            },
+            "maxItems": 1200,
+            "description": "A list of domains to specifically include in the web results. The `site:` query operator adds to this list.",
+            "example": [
+              "octen.ai",
+              "wikipedia.org"
+            ]
+          },
+          "exclude_domains": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 60
+            },
+            "maxItems": 1200,
+            "description": "A list of domains to specifically exclude from the web results. The `-site:` query operator adds to this list. If a domain appears in both `include_domains` and `exclude_domains`, `exclude_domains` takes precedence.",
+            "example": [
+              "spam.com",
+              "ads.example.net"
+            ]
+          },
+          "language": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "ar",
+                "de",
+                "en",
+                "es",
+                "fr",
+                "hi",
+                "id",
+                "it",
+                "ja",
+                "ko",
+                "nl",
+                "pl",
+                "pt",
+                "ru",
+                "th",
+                "tr",
+                "vi",
+                "zh"
+              ]
+            },
+            "default": [],
+            "description": "A list of languages to restrict web results to, as ISO 639-1 codes. By default, no language filter is applied.",
+            "example": [
+              "en",
+              "zh"
+            ]
+          },
+          "time_basis": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "published",
+              "crawled"
+            ],
+            "default": "auto",
+            "description": "Determines which time field is used for time filtering. `published` uses time_published; `crawled` uses time_last_crawled. Results missing this field are excluded when filtering by time."
+          },
+          "time_range": {
+            "type": "string",
+            "enum": [
+              "day",
+              "week",
+              "month",
+              "year",
+              "d",
+              "w",
+              "m",
+              "y"
+            ],
+            "description": "Relative time window counting back from the current time based on `time_basis`. Mutually exclusive with `start_time`/`end_time` — if both are provided, `start_time`/`end_time` take precedence."
+          },
+          "start_time": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Start time for filtering web results. ISO 8601 format.",
+            "example": "2025-01-01T00:00:00+08:00"
+          },
+          "end_time": {
+            "type": "string",
+            "format": "date-time",
+            "description": "End time for filtering web results. ISO 8601 format.",
+            "example": "2025-01-01T00:00:00+08:00"
+          }
+        }
+      },
+      "DesignImageOptions": {
+        "type": "object",
+        "description": "Controls the image results.",
+        "properties": {
+          "enable": {
+            "type": "boolean",
+            "default": true,
+            "description": "If true, returns `data.images`."
+          },
+          "count": {
+            "type": "integer",
+            "default": 5,
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Number of image results to return."
+          },
+          "design_facts": {
+            "type": "boolean",
+            "default": true,
+            "description": "If true, returns `design_facts` for each image result."
+          },
+          "snippet": {
+            "$ref": "#/components/schemas/DesignSnippetOptions"
+          },
+          "group_id": {
+            "type": "string",
+            "description": "Returns the images in this group, in group order, instead of searching by `query`. Takes the `group.group_id` of an image result.",
+            "example": "deck_3b7f0e92c4a1d85f6e2b9c07a3d4f1e8b5c26a9d0f7e3b1c4a8d2e6f9b0c5a7d"
+          }
+        }
+      },
+      "DesignSnippetOptions": {
+        "type": "object",
+        "description": "Controls the reusable code returned with image results.",
+        "properties": {
+          "enable": {
+            "type": "boolean",
+            "default": true,
+            "description": "If true, returns `snippet` for image results that have reusable code."
+          },
+          "max_tokens": {
+            "type": "integer",
+            "default": 5000,
+            "minimum": 100,
+            "maximum": 100000,
+            "description": "Maximum tokens of snippet code included per result."
+          }
+        }
+      },
+      "DesignSearchResponse": {
+        "type": "object",
+        "required": [
+          "request_id"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "description": "Business status code. 0 indicates success."
+          },
+          "msg": {
+            "type": "string",
+            "description": "A message describing the result."
+          },
+          "request_id": {
+            "type": "string",
+            "description": "The unique identifier for this request."
+          },
+          "data": {
+            "$ref": "#/components/schemas/DesignSearchData"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/DesignSearchMeta"
+          }
+        }
+      },
+      "DesignSearchData": {
+        "type": "object",
+        "description": "The main response payload.",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The original query."
+          },
+          "images": {
+            "type": "array",
+            "description": "A list of image results. Returned only if `images.enable` is true.",
+            "items": {
+              "$ref": "#/components/schemas/DesignImageResult"
+            }
+          },
+          "results": {
+            "type": "array",
+            "description": "A list of web results. Returned only if `web_search.enable` is true.",
+            "items": {
+              "$ref": "#/components/schemas/DesignSearchResult"
+            }
+          }
+        }
+      },
+      "DesignSearchResult": {
+        "type": "object",
+        "description": "A single web result.",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "The title of the result page."
+          },
+          "url": {
+            "type": "string",
+            "description": "The URL of the result page."
+          },
+          "highlight": {
+            "type": "string",
+            "description": "Query-relevant highlight snippets. Returned only if `web_search.highlight.enable` is true."
+          },
+          "full_content": {
+            "type": "string",
+            "description": "Full raw page content. Returned only if `web_search.full_content.enable` is true."
+          },
+          "authors": {
+            "type": "string",
+            "description": "Website name or author."
+          },
+          "time_published": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Publish time in ISO 8601."
+          },
+          "time_last_crawled": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Last crawl time in ISO 8601."
+          },
+          "favicon": {
+            "type": "string",
+            "description": "The favicon URL of the result site."
+          },
+          "cover_image": {
+            "type": "object",
+            "description": "The page cover image. Returned when the page has one.",
+            "properties": {
+              "url": {
+                "type": "string",
+                "description": "The cover image URL."
+              },
+              "description": {
+                "type": "string",
+                "description": "Text description of the cover image."
+              }
+            }
+          },
+          "images": {
+            "type": "array",
+            "description": "In-body images of the page, in order of appearance. Returned when the page has any.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "description": "The image URL."
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Text description of the image."
+                }
+              }
+            }
+          }
+        }
+      },
+      "DesignImageResult": {
+        "type": "object",
+        "description": "A single image result.",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "web_page",
+              "web_section",
+              "app_screen",
+              "slide"
+            ],
+            "description": "The image type.\n\n- `web_page`: a full web page.\n- `web_section`: one section of a web page.\n- `app_screen`: a mobile app screen.\n- `slide`: one slide of a deck."
+          },
+          "title": {
+            "type": "string",
+            "description": "The title of the image."
+          },
+          "description": {
+            "type": "string",
+            "description": "Server-generated text description of the image content."
+          },
+          "url": {
+            "type": "string",
+            "description": "The image URL."
+          },
+          "thumbnail": {
+            "type": "string",
+            "description": "Thumbnail URL."
+          },
+          "source_page": {
+            "type": "string",
+            "description": "URL of the original page hosting the image. Not returned for `app_screen` results."
+          },
+          "width": {
+            "type": "integer",
+            "description": "Image width in pixels."
+          },
+          "height": {
+            "type": "integer",
+            "description": "Image height in pixels."
+          },
+          "group": {
+            "$ref": "#/components/schemas/DesignImageGroup"
+          },
+          "design_facts": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Design values of the image, such as colors, fonts, and font sizes. Fields vary by image. Returned only if `images.design_facts` is true."
+          },
+          "snippet": {
+            "$ref": "#/components/schemas/DesignSnippet"
+          }
+        }
+      },
+      "DesignImageGroup": {
+        "type": "object",
+        "description": "The web page or deck the image belongs to. Returned for `web_section` and `slide` results.",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "The group identifier. Pass it as `images.group_id` to get every image in the group."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "web_page",
+              "deck"
+            ],
+            "description": "The group type.\n\n- `web_page`: the sections of one web page.\n- `deck`: the slides of one deck."
+          },
+          "name": {
+            "type": "string",
+            "description": "The name of the web page or deck."
+          },
+          "position": {
+            "type": "integer",
+            "description": "The position of this image in the group, starting at 1."
+          },
+          "total": {
+            "type": "integer",
+            "description": "The number of images in the group."
+          },
+          "master": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "The slide master of the deck, such as its theme colors and fonts. Returned only for `deck` groups, and may be empty."
+          }
+        }
+      },
+      "DesignSnippet": {
+        "type": "object",
+        "description": "Reusable code for the image. Returned only if `images.snippet.enable` is true and the image has reusable code.",
+        "properties": {
+          "format": {
+            "type": "string",
+            "enum": [
+              "html"
+            ],
+            "description": "The code format."
+          },
+          "code": {
+            "type": "string",
+            "description": "The code."
+          }
+        }
+      },
+      "DesignSearchMeta": {
+        "type": "object",
+        "description": "Additional metadata for the search request.",
+        "properties": {
+          "usage": {
+            "$ref": "#/components/schemas/DesignSearchUsage"
+          },
+          "latency": {
+            "type": "number",
+            "description": "Response time in milliseconds."
+          },
+          "warning": {
+            "type": "string",
+            "nullable": true,
+            "description": "Warning message, if any."
+          }
+        }
+      },
+      "DesignSearchUsage": {
+        "type": "object",
+        "description": "Usage information for the search request.",
+        "properties": {
+          "num_search_queries": {
+            "type": "integer",
+            "description": "Number of search queries executed."
           }
         }
       },

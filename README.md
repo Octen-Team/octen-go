@@ -2,11 +2,11 @@
 
 Official Go SDK for the [Octen](https://docs.octen.ai) search API. It has no dependencies outside the standard library and needs Go 1.22 or newer.
 
-It covers six endpoints: Web Search, Broad Search, News Search, Business Search, Pulse Search and Place Search.
+It covers ten endpoints: Web Search, Web Search Premier, Broad Search, News Search, Business Search, Pulse Search, Place Search, Image Search, Video Search (invite-only beta) and Design Search.
 
 - [Install](#install)
 - [Quick start](#quick-start)
-- [The six methods](#the-six-methods)
+- [Methods](#methods)
 - [Request options](#request-options)
 - [Client options](#client-options)
 - [Errors](#errors)
@@ -60,15 +60,15 @@ func main() {
 
 Always create a client with `NewClient`; the zero value of `Client` is not usable. A client is safe for concurrent use, so share one for the life of the program.
 
-Field names follow the [API reference](https://docs.octen.ai) exactly, in Go style: `include_domains` is `IncludeDomains`, `request_id` is `RequestID`, `url` is `URL`. Only `Query` is a plain required string. Every other request scalar is a pointer, so "not set" and "zero" stay distinct (a latitude of `0` is a real value); the helpers `octen.Int`, `octen.String`, `octen.Bool`, `octen.Float64` and the generic `octen.Ptr` build those pointers. Nested option objects are pointers to structs, and lists are slices.
+Field names follow the [API reference](https://docs.octen.ai) exactly, in Go style: `include_domains` is `IncludeDomains`, `request_id` is `RequestID`, `url` is `URL`. Required fields are plain values: `Query`, and for Image and Video Search the `Inputs` slice and each input's `Type`. Every other request scalar is a pointer (including the optional `Query` of Design Search), so "not set" and "zero" stay distinct (a latitude of `0` is a real value); the helpers `octen.Int`, `octen.String`, `octen.Bool`, `octen.Float64` and the generic `octen.Ptr` build those pointers. Nested option objects are pointers to structs, and lists are slices.
 
 Responses are the whole JSON envelope: `Code`, `Msg`, `RequestID`, `Data` and `Meta`. `RequestID` is the body's `request_id`, or an empty string when the body has none; `Data` and `Meta` are pointers that are `nil` when the server did not send them. `resp.RawJSON()` returns the body exactly as received, including fields this version does not model.
 
-## The six methods
+## Methods
 
-Every method takes a `context.Context`, the request struct, and optional [request options](#request-options). `Query` is required everywhere.
+Every method takes a `context.Context`, the request struct, and optional [request options](#request-options). `Query` is required, except that Image and Video Search take exactly one entry in `Inputs` instead, and Design Search may leave it out when `Images.GroupID` is set.
 
-The snippets below skip the `err` check after each call and read `Data` directly to stay short; real code checks `err` first and `Data != nil`, as the quick start does.
+The snippets below check `err` and `Data != nil` inline to stay short; `Data` and `Meta` are pointers that are `nil` when the server did not send them.
 
 ```go
 ctx := context.Background()
@@ -81,7 +81,7 @@ web, err := client.Search.Search(ctx, octen.SearchParams{
 	TimeRange:      octen.String("month"),
 	Highlight:      &octen.HighlightOptions{Enable: octen.Bool(true), MaxTokens: octen.Int(300)},
 })
-if err == nil && len(web.Data.Results) > 0 {
+if err == nil && web.Data != nil && len(web.Data.Results) > 0 {
 	fmt.Println(web.Data.Results[0].Highlight)
 }
 
@@ -94,7 +94,7 @@ broad, err := client.Search.BroadSearch(ctx, octen.BroadSearchParams{
 		Language: []string{"en"},
 	},
 })
-if err == nil {
+if err == nil && broad.Data != nil {
 	fmt.Println(broad.Data.Queries)
 	for _, group := range broad.Data.SearchResults {
 		fmt.Println(group.Query, len(group.Results))
@@ -108,7 +108,7 @@ news, err := client.Search.NewsSearch(ctx, octen.NewsSearchParams{
 	TimeRange: octen.String("week"),
 	Subjects:  &octen.NewsSubjectOptions{Enable: octen.Bool(true), Count: octen.Int(3), MaxSubNews: octen.Int(5)},
 })
-if err == nil {
+if err == nil && news.Data != nil {
 	for _, s := range news.Data.Subjects {
 		fmt.Println(s.Name)
 	}
@@ -125,7 +125,7 @@ biz, err := client.Search.BusinessSearch(ctx, octen.BusinessSearchParams{
 		MaxNews:       octen.Int(5),
 	},
 })
-if err == nil {
+if err == nil && biz.Data != nil {
 	for _, e := range biz.Data.Entities {
 		switch {
 		case e.Company != nil:
@@ -160,18 +160,74 @@ places, err := client.PlaceSearch.Search(ctx, octen.PlaceSearchParams{
 	Longitude: octen.Float64(-122.4075),
 	Radius:    octen.Int(2000), // meters, needs latitude and longitude
 })
-if err == nil {
+if err == nil && places.Data != nil {
 	for _, p := range places.Data.Places {
 		fmt.Println(p.Name, p.Distance, p.Rating)
 	}
 }
+
+// Web Search Premier: POST /search-premier (deeper retrieval and reranking; same params and response as Search)
+premier, err := client.Search.SearchPremier(ctx, octen.SearchParams{
+	Query:          "EU AI Act guidance",
+	ResultType:     octen.String("dynamic"), // only relevant results, up to Count
+	Count:          octen.Int(5),
+	IncludeDomains: []string{"europa.eu"},
+})
+if err == nil && premier.Meta != nil && premier.Data != nil {
+	fmt.Println(premier.Meta.ResultType, len(premier.Data.Results))
+}
+
+// Image Search: POST /image-search (exactly one input: a text query, or an image as a URL or base64 data)
+images, err := client.Search.ImageSearch(ctx, octen.ImageSearchParams{
+	Inputs: []octen.ImageSearchInput{{Type: "image", URL: octen.String("https://example.com/photo.jpg")}},
+	// or an uploaded image: {Type: "image", Data: octen.String(base64.StdEncoding.EncodeToString(jpegBytes))}
+	// or a text query:      {Type: "text", Data: octen.String("golden retriever puppy")}
+	Count: octen.Int(5),
+})
+if err == nil && images.Data != nil {
+	for _, r := range images.Data.Results {
+		fmt.Println(r.Title, r.URL, r.Width, r.Height)
+	}
+}
+
+// Video Search: POST /video-search (invite-only beta: contact Octen for access)
+videos, err := client.Search.VideoSearch(ctx, octen.VideoSearchParams{
+	Inputs:    []octen.VideoSearchInput{{Type: "text", Data: octen.String("how to tie a bowline knot")}},
+	Count:     octen.Int(3),
+	TimeRange: octen.String("year"),
+})
+if err == nil && videos.Data != nil {
+	for _, r := range videos.Data.Results {
+		fmt.Println(r.Title, r.URL, r.DurationSeconds)
+	}
+}
+
+// Design Search: POST /design-search (design references as image results, plus web results)
+design, err := client.Search.DesignSearch(ctx, octen.DesignSearchParams{
+	Query:     octen.String("SaaS landing page hero section"),
+	Images:    &octen.DesignImageOptions{Count: octen.Int(5), Snippet: &octen.DesignSnippetOptions{MaxTokens: octen.Int(2000)}},
+	WebSearch: &octen.DesignWebSearchOptions{Count: octen.Int(3)},
+})
+if err == nil && design.Data != nil {
+	for _, img := range design.Data.Images {
+		fmt.Println(img.Type, img.URL, img.DesignFacts)
+		if img.Group != nil {
+			// The rest of the page or deck, in order (Position runs from 1 to Total):
+			// client.Search.DesignSearch(ctx, octen.DesignSearchParams{
+			//	Images: &octen.DesignImageOptions{GroupID: octen.String(img.Group.GroupID)}})
+			fmt.Println(img.Group.Name, img.Group.Position, img.Group.Total)
+		}
+	}
+}
 ```
+
+Web Search Premier takes `SearchParams` and returns `*SearchResponse`, the same types as Web Search, so code written for one works with the other. Video Search is an invite-only beta; with a key that has no access the server refuses the call. In Design Search, `DesignFacts` and `Group.Master` are free-form maps decided by the server; set `Images.DesignFacts` or `Images.Snippet.Enable` to `false` to leave them out, and `Images.Enable` or `WebSearch.Enable` to `false` to skip a result list.
 
 `BusinessEntity` is a union of `Company` and `Person`, selected by the entity's `type`. For a `type` this version does not know, or a missing one, only `Type` and `Raw` are filled, so a new entity type never breaks decoding: always keep a `default` branch. `Raw` holds the entity's original JSON, and `json.Marshal` writes it back unchanged, so a decoded response can be stored and decoded again. An entity built by hand without `Raw` marshals as its `Company` or `Person`.
 
 ### Local validation
 
-Before sending anything the SDK checks that `Query` is not blank (surrounding whitespace does not count) and rejects `NaN` and `±Inf` anywhere in the params, because `encoding/json` cannot encode them; both are reported as a `*ValidationError` with the offending field. It does not check value ranges or enum values (for example `Count` or `TimeRange`); out-of-range values come back from the server as a 400 and match `ErrBadRequest`.
+Before sending anything the SDK checks that `Query` is not blank (surrounding whitespace does not count) and rejects `NaN` and `±Inf` anywhere in the params, because `encoding/json` cannot encode them; both are reported as a `*ValidationError` with the offending field. Image and Video Search instead need exactly one input in `Inputs` (`Field` is `inputs`) whose `Type` is `text` or `image` for Image Search and `text` for Video Search (`inputs[0].type`); a text input needs non-blank `Data` (`inputs[0].data`) and no `URL` (`inputs[0].url`), and an image input needs exactly one of a non-blank `URL` or base64 `Data` (`inputs[0]`); Design Search needs a non-blank `Query` or a non-blank `Images.GroupID` (`Field` is `query`). Apart from the input `Type`, it does not check value ranges or enum values (for example `Count` or `TimeRange`); out-of-range values come back from the server as a 400 and match `ErrBadRequest`.
 
 Slices are omitted from the request when they are empty, so an empty slice cannot be sent explicitly.
 
@@ -302,7 +358,8 @@ Compared with `octen-py` 0.11.1:
 
 | Area | `octen-py` | `octen-go` |
 |---|---|---|
-| Parameter validation | Checks value ranges (such as `count`) locally | Checks only that `Query` is not blank and that numbers are finite; ranges are checked by the server (400) |
+| Parameter validation | Checks value ranges (such as `count`) locally | Checks only the required inputs (a non-blank `Query`, one Image or Video Search input) and that numbers are finite; ranges are checked by the server (400) |
+| Image Search input | `query=` or `image_url=` keyword (or a raw `inputs=` list) | One `ImageSearchInput` in `Inputs` |
 | Unknown keys in nested request objects | Top level rejected, nested `highlight` / `full_content` allowed | Not possible: requests are typed structs |
 | Client timeout | Retried | Not retried |
 | `Retry-After` | 429 only | 429 and 503; above 60 s no retry |
@@ -310,7 +367,7 @@ Compared with `octen-py` 0.11.1:
 | 2xx responses | Validated against the full response model | Judged only by the rules under [Errors](#errors), plus decoding into the typed response |
 | Error classes | Dedicated classes for 401 and 429 | Also 403, 400/422 and 5xx sentinels |
 | Auth headers | `x-api-key` and `Authorization: Bearer` | `x-api-key` only |
-| Deprecated `topic` parameter | Still present | Not exposed |
+| Deprecated `topic` parameter, and `html_snippet` on Image Search | Still present | Not exposed |
 | Broad Search timeout | 30 s like every endpoint | 120 s, separate default, unless a client timeout is set explicitly |
 
 Because the Python SDK retries more situations (client timeouts and every network error), it carries the double-billing risks described above and more.
@@ -338,10 +395,11 @@ To release, tag `vX.Y.Z` on `main` after CI is green; the release workflow rerun
 go vet ./...
 go test -race -count=1 ./...
 OCTEN_LIVE=1 OCTEN_API_KEY=... go test -count=1 -run TestLive ./...   # real, billed calls
+OCTEN_LIVE=1 OCTEN_LIVE_VIDEO=1 OCTEN_API_KEY=... go test -count=1 -run TestLive ./...   # also Video Search (beta access needed)
 go run ./internal/tools/specdrift   # compares the live OpenAPI spec with testdata/openapi.json
 ```
 
-`testdata/openapi.json` is a snapshot of the public OpenAPI spec that the contract test compares the types against. A weekly workflow runs `specdrift` and fails when the schemas of the six endpoints change upstream; it never rewrites the snapshot. [testdata/README.md](testdata/README.md) describes the snapshot and how to update it.
+`testdata/openapi.json` is a snapshot of the public OpenAPI spec that the contract test compares the types against. A weekly workflow runs `specdrift` and fails when the schemas of the ten endpoints change upstream; it never rewrites the snapshot. [testdata/README.md](testdata/README.md) describes the snapshot and how to update it.
 
 ## License
 

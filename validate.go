@@ -7,8 +7,12 @@ import (
 	"strings"
 )
 
-// validateParams rejects a blank query and any NaN or ±Inf number before a request is sent:
-// encoding/json refuses non-finite floats with an error that names neither field nor value.
+// paramsValidator is implemented by params whose required input is not a plain query string.
+type paramsValidator interface{ validate() error }
+
+// validateParams rejects a blank query (or the endpoint's own missing input) and any NaN or ±Inf
+// number before a request is sent: encoding/json refuses non-finite floats with an error that
+// names neither field nor value.
 func validateParams(v any) error {
 	rv := reflect.ValueOf(v)
 	for rv.Kind() == reflect.Ptr || rv.Kind() == reflect.Interface {
@@ -20,12 +24,17 @@ func validateParams(v any) error {
 	if rv.Kind() != reflect.Struct {
 		return &ValidationError{Field: "params", Message: "params must be a request struct."}
 	}
-	q, ok := jsonField(rv, "query")
-	if !ok || q.Kind() != reflect.String || strings.TrimSpace(q.String()) == "" {
+	if pv, ok := rv.Interface().(paramsValidator); ok {
+		if err := pv.validate(); err != nil {
+			return err
+		}
+	} else if q, ok := jsonField(rv, "query"); !ok || q.Kind() != reflect.String || strings.TrimSpace(q.String()) == "" {
 		return blankQuery()
 	}
 	return checkFinite(rv, "")
 }
+
+func isBlank(s *string) bool { return s == nil || strings.TrimSpace(*s) == "" }
 
 func blankQuery() error {
 	return &ValidationError{Field: "query", Message: "query is required and must be a non-empty string."}

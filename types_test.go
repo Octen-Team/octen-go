@@ -86,6 +86,12 @@ func setRaw(t *testing.T, v rawResponse, raw []byte) {
 		r.raw = raw
 	case *PlaceSearchResponse:
 		r.raw = raw
+	case *ImageSearchResponse:
+		r.raw = raw
+	case *VideoSearchResponse:
+		r.raw = raw
+	case *DesignSearchResponse:
+		r.raw = raw
 	default:
 		t.Fatalf("unsupported response type %T", v)
 	}
@@ -103,6 +109,9 @@ func TestUnknownResponseFieldsKeptInRawJSON(t *testing.T) {
 		{"business", &BusinessSearchResponse{}},
 		{"pulse", &PulseSearchResponse{}},
 		{"place", &PlaceSearchResponse{}},
+		{"image", &ImageSearchResponse{}},
+		{"video", &VideoSearchResponse{}},
+		{"design", &DesignSearchResponse{}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -308,7 +317,7 @@ func TestBusinessEntityEdgeCases(t *testing.T) {
 func TestUndocumentedFieldsAbsent(t *testing.T) {
 	banned := map[string]bool{
 		"topic": true, "include_videos": true, "context": true,
-		"num_highlights": true, "sentences_per_highlight": true,
+		"num_highlights": true, "sentences_per_highlight": true, "html_snippet": true,
 	}
 	seen := map[reflect.Type]bool{}
 	var walk func(path string, typ reflect.Type)
@@ -332,6 +341,7 @@ func TestUndocumentedFieldsAbsent(t *testing.T) {
 	for name, v := range map[string]any{
 		"SearchParams": SearchParams{}, "BroadSearchParams": BroadSearchParams{}, "NewsSearchParams": NewsSearchParams{},
 		"BusinessSearchParams": BusinessSearchParams{}, "PulseSearchParams": PulseSearchParams{}, "PlaceSearchParams": PlaceSearchParams{},
+		"ImageSearchParams": ImageSearchParams{}, "VideoSearchParams": VideoSearchParams{}, "DesignSearchParams": DesignSearchParams{},
 	} {
 		walk(name, reflect.TypeOf(v))
 	}
@@ -384,6 +394,14 @@ func TestEnumTagsOnRequestFields(t *testing.T) {
 	check(reflect.TypeOf(PulseSearchParams{}), "Safesearch", "off,strict")
 	check(reflect.TypeOf(PlaceUserLocation{}), "Type", "approximate")
 	check(reflect.TypeOf(PlaceWebSearchOptions{}), "Language", langs)
+	check(reflect.TypeOf(ImageSearchInput{}), "Type", "text,image")
+	check(reflect.TypeOf(ImageSearchParams{}), "Safesearch", "off,strict")
+	check(reflect.TypeOf(VideoSearchInput{}), "Type", "text")
+	check(reflect.TypeOf(VideoSearchParams{}), "TimeRange", "day,week,month,year,d,w,m,y")
+	check(reflect.TypeOf(VideoSearchParams{}), "Safesearch", "off,strict")
+	check(reflect.TypeOf(DesignWebSearchOptions{}), "Language", langs)
+	check(reflect.TypeOf(DesignWebSearchOptions{}), "TimeBasis", "auto,published,crawled")
+	check(reflect.TypeOf(DesignWebSearchOptions{}), "TimeRange", "day,week,month,year,d,w,m,y")
 }
 
 // A decoded response must survive json.Marshal and json.Unmarshal, so callers can cache it.
@@ -424,5 +442,122 @@ func TestBusinessEntityMarshalRoundTrip(t *testing.T) {
 	}
 	if got := mustMarshal(t, BusinessEntity{}); got != "null" {
 		t.Errorf("empty entity = %s, want null", got)
+	}
+}
+
+// Bodies below follow live responses of 2026-11-21.
+func TestImageSearchResponseDecodes(t *testing.T) {
+	body := `{"data":{"results":[{"title":"T","url":"https://e.com/a.jpg","source_page":"https://e.com/a",
+		"description":"d","width":1024,"height":683,"thumbnail":"https://cdn.example/t.jpg"}]},
+		"request_id":"r","meta":{"usage":{"num_search_queries":1},"latency":419,"warning":""},"code":0,"msg":""}`
+	var r ImageSearchResponse
+	if err := json.Unmarshal([]byte(body), &r); err != nil {
+		t.Fatal(err)
+	}
+	want := ImageSearchResult{Title: "T", URL: "https://e.com/a.jpg", SourcePage: "https://e.com/a", Description: "d",
+		Width: 1024, Height: 683, Thumbnail: "https://cdn.example/t.jpg"}
+	if len(r.Data.Results) != 1 || r.Data.Results[0] != want {
+		t.Errorf("results: %+v", r.Data.Results)
+	}
+	if r.RequestID != "r" || r.Meta.Usage.NumSearchQueries != 1 || r.Meta.Latency != 419 || r.Meta.Warning == nil || *r.Meta.Warning != "" {
+		t.Errorf("envelope: %+v meta %+v", r, r.Meta)
+	}
+	var sparse ImageSearchResponse
+	if err := json.Unmarshal([]byte(`{"request_id":"r","data":{"results":[{"url":"u"}]},"meta":{"warning":null,"usage":null}}`), &sparse); err != nil {
+		t.Fatal(err)
+	}
+	if sparse.Data.Results[0].Title != "" || sparse.Meta.Warning != nil || sparse.Meta.Usage != nil || sparse.Code != nil || sparse.Msg != nil {
+		t.Errorf("sparse: %+v meta %+v", sparse, sparse.Meta)
+	}
+	var empty ImageSearchResponse
+	if err := json.Unmarshal([]byte(`{"request_id":"r"}`), &empty); err != nil || empty.Data != nil || empty.Meta != nil {
+		t.Errorf("missing data and meta: %+v err=%v", empty, err)
+	}
+}
+
+func TestVideoSearchResponseDecodes(t *testing.T) {
+	body := `{"data":{"results":[{"title":"T","url":"https://v.example/w","source_page":"https://v.example/p",
+		"description":"d","cover_url":"https://v.example/c.jpg","duration_seconds":78,"authors":"A",
+		"time_published":"2011-04-16T00:00:00Z","time_last_crawled":"2026-05-28T05:04:41Z"}]},
+		"request_id":"r","meta":{"usage":{"num_search_queries":1},"latency":46,"warning":""},"code":0,"msg":""}`
+	var r VideoSearchResponse
+	if err := json.Unmarshal([]byte(body), &r); err != nil {
+		t.Fatal(err)
+	}
+	want := VideoSearchResult{Title: "T", URL: "https://v.example/w", SourcePage: "https://v.example/p", Description: "d",
+		CoverURL: "https://v.example/c.jpg", DurationSeconds: 78, Authors: "A",
+		TimePublished: "2011-04-16T00:00:00Z", TimeLastCrawled: "2026-05-28T05:04:41Z"}
+	if len(r.Data.Results) != 1 || r.Data.Results[0] != want {
+		t.Errorf("results: %+v", r.Data.Results)
+	}
+	if r.Meta.Usage.NumSearchQueries != 1 || r.Meta.Latency != 46 {
+		t.Errorf("meta: %+v", r.Meta)
+	}
+	var sparse VideoSearchResponse
+	if err := json.Unmarshal([]byte(`{"request_id":"r","data":{"results":null},"meta":{"warning":null}}`), &sparse); err != nil {
+		t.Fatal(err)
+	}
+	if sparse.Data.Results != nil || sparse.Meta.Warning != nil {
+		t.Errorf("sparse: %+v", sparse)
+	}
+}
+
+func TestDesignSearchResponseDecodes(t *testing.T) {
+	body := `{"data":{"query":"q","results":[{"title":"T","url":"https://w.example","highlight":"h","full_content":"f",
+		"authors":"A","time_published":"2026-07-04T13:26:15Z","time_last_crawled":"2026-11-21T11:32:33Z","favicon":"fav",
+		"cover_image":{"url":"c","description":""},"images":[{"url":"i","description":"id"}]}],
+		"images":[{"type":"web_section","title":"Hero","description":"desc","url":"https://cdn.example/s.png",
+		"thumbnail":"https://cdn.example/t.png","source_page":"https://site.example/","width":1440,"height":900,
+		"group":{"group_id":"pg_1","type":"web_page","name":"Site","position":1,"total":18},
+		"design_facts":{"color":{"text":{"$type":"color"}},"fonts":["Switzer"]},
+		"snippet":{"format":"html","code":"<section></section>"}},
+		{"type":"slide","url":"u2","group":{"group_id":"deck_1","type":"deck","position":19,"total":28,"master":{"k":"v"}}},
+		{"type":"app_screen","url":"u3","group":null,"design_facts":null,"snippet":null}],
+		"specs":[{"undocumented":true}]},
+		"request_id":"r","meta":{"usage":{"num_search_queries":1},"latency":263},"code":0,"msg":"success"}`
+	var r DesignSearchResponse
+	if err := json.Unmarshal([]byte(body), &r); err != nil {
+		t.Fatal(err)
+	}
+	d := r.Data
+	if d.Query != "q" || len(d.Images) != 3 || len(d.Results) != 1 {
+		t.Fatalf("data: %+v", d)
+	}
+	img := d.Images[0]
+	if img.Type != "web_section" || img.Title != "Hero" || img.Description != "desc" || img.URL != "https://cdn.example/s.png" ||
+		img.Thumbnail != "https://cdn.example/t.png" || img.SourcePage != "https://site.example/" || img.Width != 1440 || img.Height != 900 {
+		t.Errorf("image: %+v", img)
+	}
+	if g := img.Group; g == nil || g.GroupID != "pg_1" || g.Type != "web_page" || g.Name != "Site" || g.Position != 1 || g.Total != 18 || g.Master != nil {
+		t.Errorf("group: %+v", img.Group)
+	}
+	if img.Snippet == nil || img.Snippet.Format != "html" || img.Snippet.Code != "<section></section>" {
+		t.Errorf("snippet: %+v", img.Snippet)
+	}
+	if fonts, ok := img.DesignFacts["fonts"].([]any); !ok || fonts[0] != "Switzer" || img.DesignFacts["color"] == nil {
+		t.Errorf("design_facts: %+v", img.DesignFacts)
+	}
+	if g := d.Images[1].Group; g == nil || g.Type != "deck" || g.Position != 19 || g.Master["k"] != "v" {
+		t.Errorf("deck group: %+v", g)
+	}
+	if bare := d.Images[2]; bare.Group != nil || bare.DesignFacts != nil || bare.Snippet != nil {
+		t.Errorf("null group, design_facts and snippet must decode to nil: %+v", bare)
+	}
+	res := d.Results[0]
+	if res.Title != "T" || res.URL != "https://w.example" || res.Highlight != "h" || res.FullContent != "f" || res.Authors != "A" ||
+		res.TimePublished == "" || res.TimeLastCrawled == "" || res.Favicon != "fav" || res.CoverImage == nil || res.CoverImage.URL != "c" ||
+		len(res.Images) != 1 || res.Images[0].Description != "id" {
+		t.Errorf("web result: %+v", res)
+	}
+	if r.Msg == nil || *r.Msg != "success" || r.Meta.Usage.NumSearchQueries != 1 || r.Meta.Latency != 263 || r.Meta.Warning != nil {
+		t.Errorf("envelope: %+v meta %+v", r, r.Meta)
+	}
+	// An images.enable or web_search.enable of false leaves the list out or empty.
+	var off DesignSearchResponse
+	if err := json.Unmarshal([]byte(`{"request_id":"r","data":{"query":"q","images":[],"results":null}}`), &off); err != nil {
+		t.Fatal(err)
+	}
+	if len(off.Data.Images) != 0 || off.Data.Results != nil || off.Meta != nil {
+		t.Errorf("disabled lists: %+v", off.Data)
 	}
 }

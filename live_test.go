@@ -2,7 +2,9 @@ package octen_test
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -15,6 +17,8 @@ import (
 )
 
 // These tests call the production API and are billed: they run only with OCTEN_LIVE=1 and OCTEN_API_KEY.
+// Video Search is an invite-only beta, so its success cases also need OCTEN_LIVE_VIDEO=1; with it set,
+// any error, including a 403, fails them.
 
 func liveClient(t *testing.T, opts ...octen.Option) *octen.Client {
 	t.Helper()
@@ -25,6 +29,16 @@ func liveClient(t *testing.T, opts ...octen.Option) *octen.Client {
 	c, err := octen.NewClient(append([]octen.Option{octen.WithAPIKey(key)}, opts...)...)
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
+	}
+	return c
+}
+
+// liveVideoClient gates the Video Search success cases behind OCTEN_LIVE_VIDEO=1.
+func liveVideoClient(t *testing.T) *octen.Client {
+	t.Helper()
+	c := liveClient(t)
+	if os.Getenv("OCTEN_LIVE_VIDEO") != "1" {
+		t.Skip("Video Search success cases need OCTEN_LIVE_VIDEO=1 and a key with beta access")
 	}
 	return c
 }
@@ -107,6 +121,64 @@ func TestLivePlaceSearch(t *testing.T) {
 		t.Fatal(err)
 	}
 	requireRequestID(t, res.RequestID, res.Data != nil)
+}
+
+// Searching by a well-known Commons photo finds that photo again, which a text query for "cat" need not.
+func TestLiveImageSearchByURL(t *testing.T) {
+	c := liveClient(t)
+	res, err := c.Search.ImageSearch(liveContext(t), octen.ImageSearchParams{
+		Inputs: []octen.ImageSearchInput{{Type: "image", URL: octen.String("https://upload.wikimedia.org/wikipedia/commons/a/a3/June_odd-eyed-cat.jpg")}},
+		Count:  octen.Int(2),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireRequestID(t, res.RequestID, res.Data != nil)
+	found := false
+	for _, r := range res.Data.Results {
+		found = found || strings.Contains(strings.ToLower(r.URL+" "+r.SourcePage), "odd-eyed")
+	}
+	if !found {
+		t.Fatalf("no result points at the input photo: %+v", res.Data.Results)
+	}
+}
+
+// The base64 form of the same Commons photo, as a small thumbnail downloaded here, finds it too.
+// Commons serves only its standard thumbnail widths (330 px is one); others return 400.
+func TestLiveImageSearchByBase64(t *testing.T) {
+	c := liveClient(t)
+	ctx := liveContext(t)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		"https://upload.wikimedia.org/wikipedia/commons/thumb/a/a3/June_odd-eyed-cat.jpg/330px-June_odd-eyed-cat.jpg", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("User-Agent", "octen-go-sdk-live-test")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("download test image: %v", err)
+	}
+	img, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	resp.Body.Close()
+	if err != nil || resp.StatusCode != http.StatusOK || len(img) == 0 {
+		t.Fatalf("download test image: status %d, %d bytes, err %v", resp.StatusCode, len(img), err)
+	}
+	t.Logf("image_bytes=%d", len(img))
+	res, err := c.Search.ImageSearch(ctx, octen.ImageSearchParams{
+		Inputs: []octen.ImageSearchInput{{Type: "image", Data: octen.String(base64.StdEncoding.EncodeToString(img))}},
+		Count:  octen.Int(2),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireRequestID(t, res.RequestID, res.Data != nil)
+	found := false
+	for _, r := range res.Data.Results {
+		found = found || strings.Contains(strings.ToLower(r.URL+" "+r.SourcePage), "odd-eyed")
+	}
+	if !found {
+		t.Fatalf("no result points at the input photo: %+v", res.Data.Results)
+	}
 }
 
 func TestLiveIncludeDomains(t *testing.T) {

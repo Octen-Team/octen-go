@@ -154,7 +154,7 @@ type endpointCall struct {
 	call func(*Client, ...RequestOption) error
 }
 
-var sixCalls = []endpointCall{
+var endpointCalls = []endpointCall{
 	{"/search", 30 * time.Second, func(c *Client, o ...RequestOption) error {
 		_, err := c.Search.Search(context.Background(), SearchParams{Query: "q"}, o...)
 		return err
@@ -179,6 +179,22 @@ var sixCalls = []endpointCall{
 		_, err := c.PlaceSearch.Search(context.Background(), PlaceSearchParams{Query: "q"}, o...)
 		return err
 	}},
+	{"/search-premier", 30 * time.Second, func(c *Client, o ...RequestOption) error {
+		_, err := c.Search.SearchPremier(context.Background(), SearchParams{Query: "q"}, o...)
+		return err
+	}},
+	{"/image-search", 30 * time.Second, func(c *Client, o ...RequestOption) error {
+		_, err := c.Search.ImageSearch(context.Background(), ImageSearchParams{Inputs: []ImageSearchInput{{Type: "text", Data: String("q")}}}, o...)
+		return err
+	}},
+	{"/video-search", 30 * time.Second, func(c *Client, o ...RequestOption) error {
+		_, err := c.Search.VideoSearch(context.Background(), VideoSearchParams{Inputs: []VideoSearchInput{{Type: "text", Data: String("q")}}}, o...)
+		return err
+	}},
+	{"/design-search", 30 * time.Second, func(c *Client, o ...RequestOption) error {
+		_, err := c.Search.DesignSearch(context.Background(), DesignSearchParams{Query: String("q")}, o...)
+		return err
+	}},
 }
 
 // The effective per-attempt timeout is read off the request context deadline, which the
@@ -193,14 +209,14 @@ func TestTimeoutPrecedence(t *testing.T) {
 		want   time.Duration
 	}
 	var cases []tcase
-	for _, ep := range sixCalls {
+	for _, ep := range endpointCalls {
 		cases = append(cases,
 			tcase{ep.path + " default", nil, ep, nil, ep.def},
 			tcase{ep.path + " per-request beats default", nil, ep, []RequestOption{WithRequestTimeout(5 * time.Second)}, 5 * time.Second},
 			tcase{ep.path + " explicit client timeout", []Option{WithTimeout(10 * time.Second)}, ep, nil, 10 * time.Second},
 		)
 	}
-	broad := sixCalls[1]
+	broad := endpointCalls[1]
 	cases = append(cases,
 		tcase{"explicit client timeout equal to 30s still applies to broad", []Option{WithTimeout(30 * time.Second)}, broad, nil, 30 * time.Second},
 		tcase{"per-request beats client", []Option{WithTimeout(10 * time.Second)}, broad, []RequestOption{WithRequestTimeout(3 * time.Second)}, 3 * time.Second},
@@ -225,7 +241,7 @@ func TestTimeoutPrecedence(t *testing.T) {
 func TestRequestHeaderReachesEveryEndpoint(t *testing.T) {
 	rec := newRecorder(t)
 	c := newTestClient(t, rec.URL, WithHeader("X-Per-Call", "client"))
-	for i, ep := range sixCalls {
+	for i, ep := range endpointCalls {
 		if err := ep.call(c, WithRequestHeader("X-Per-Call", "call\t"+ep.path)); err != nil {
 			t.Fatalf("%s: %v", ep.path, err)
 		}

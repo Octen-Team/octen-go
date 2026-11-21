@@ -91,3 +91,59 @@ func TestNonFiniteNumbersRejected(t *testing.T) {
 	// A blank query is reported before any number.
 	wantValidationError(t, validateParams(&PlaceSearchParams{Latitude: Float64(math.NaN())}), "query")
 }
+
+func TestNewEndpointInputsValidated(t *testing.T) {
+	text := func(s string) ImageSearchInput { return ImageSearchInput{Type: "text", Data: String(s)} }
+	cases := []struct {
+		name   string
+		params any
+		field  string // empty when the params are valid
+	}{
+		{"image text", ImageSearchParams{Inputs: []ImageSearchInput{text("cats")}}, ""},
+		{"image url", ImageSearchParams{Inputs: []ImageSearchInput{{Type: "image", URL: String("https://example.com/a.jpg")}}}, ""},
+		{"image base64 data", ImageSearchParams{Inputs: []ImageSearchInput{{Type: "image", Data: String("aGVsbG8=")}}}, ""},
+		{"image unknown type", ImageSearchParams{Inputs: []ImageSearchInput{{Type: "audio", Data: String("x")}}}, "inputs[0].type"},
+		{"image empty type", ImageSearchParams{Inputs: []ImageSearchInput{{Data: String("cats")}}}, "inputs[0].type"},
+		{"image nil inputs", ImageSearchParams{}, "inputs"},
+		{"image empty inputs", ImageSearchParams{Inputs: []ImageSearchInput{}}, "inputs"},
+		{"image two inputs", ImageSearchParams{Inputs: []ImageSearchInput{text("a"), text("b")}}, "inputs"},
+		{"image text without data", ImageSearchParams{Inputs: []ImageSearchInput{{Type: "text"}}}, "inputs[0].data"},
+		{"image text blank data", ImageSearchParams{Inputs: []ImageSearchInput{text(" \t")}}, "inputs[0].data"},
+		{"image text with url", ImageSearchParams{Inputs: []ImageSearchInput{{Type: "text", Data: String("cats"), URL: String("https://example.com/a.jpg")}}}, "inputs[0].url"},
+		{"image text with empty url", ImageSearchParams{Inputs: []ImageSearchInput{{Type: "text", Data: String("cats"), URL: String("")}}}, "inputs[0].url"},
+		{"image without url or data", ImageSearchParams{Inputs: []ImageSearchInput{{Type: "image"}}}, "inputs[0]"},
+		{"image blank url", ImageSearchParams{Inputs: []ImageSearchInput{{Type: "image", URL: String(" ")}}}, "inputs[0]"},
+		{"image blank data", ImageSearchParams{Inputs: []ImageSearchInput{{Type: "image", Data: String("")}}}, "inputs[0]"},
+		{"image url and data", ImageSearchParams{Inputs: []ImageSearchInput{{Type: "image", URL: String("https://example.com/a.jpg"), Data: String("aGVsbG8=")}}}, "inputs[0]"},
+		{"image url and empty data", ImageSearchParams{Inputs: []ImageSearchInput{{Type: "image", URL: String("https://example.com/a.jpg"), Data: String("")}}}, "inputs[0]"},
+		{"video", VideoSearchParams{Inputs: []VideoSearchInput{{Type: "text", Data: String("knots")}}}, ""},
+		{"video nil inputs", VideoSearchParams{}, "inputs"},
+		{"video two inputs", VideoSearchParams{Inputs: []VideoSearchInput{{Type: "text", Data: String("a")}, {Type: "text", Data: String("b")}}}, "inputs"},
+		{"video without data", VideoSearchParams{Inputs: []VideoSearchInput{{Type: "text"}}}, "inputs[0].data"},
+		{"video blank data", VideoSearchParams{Inputs: []VideoSearchInput{{Type: "text", Data: String("\n")}}}, "inputs[0].data"},
+		{"video image type", VideoSearchParams{Inputs: []VideoSearchInput{{Type: "image", Data: String("knots")}}}, "inputs[0].type"},
+		{"video empty type", VideoSearchParams{Inputs: []VideoSearchInput{{Data: String("knots")}}}, "inputs[0].type"},
+		{"design query", DesignSearchParams{Query: String("hero")}, ""},
+		{"design group", DesignSearchParams{Images: &DesignImageOptions{GroupID: String("pg_1")}}, ""},
+		{"design group with blank query", DesignSearchParams{Query: String(" "), Images: &DesignImageOptions{GroupID: String("pg_1")}}, ""},
+		{"design query with blank group", DesignSearchParams{Query: String("hero"), Images: &DesignImageOptions{GroupID: String("")}}, ""},
+		{"design nothing", DesignSearchParams{}, "query"},
+		{"design blank query", DesignSearchParams{Query: String("  ")}, "query"},
+		{"design images without group", DesignSearchParams{Images: &DesignImageOptions{Count: Int(2)}}, "query"},
+		{"design blank group", DesignSearchParams{Images: &DesignImageOptions{GroupID: String(" ")}}, "query"},
+		{"design pointer", &DesignSearchParams{Query: String("hero")}, ""},
+		{"image pointer", &ImageSearchParams{}, "inputs"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateParams(tc.params)
+			if tc.field == "" {
+				if err != nil {
+					t.Fatalf("valid params rejected: %v", err)
+				}
+				return
+			}
+			wantValidationError(t, err, tc.field)
+		})
+	}
+}

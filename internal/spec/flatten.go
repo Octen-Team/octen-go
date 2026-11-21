@@ -140,6 +140,21 @@ func (d *Doc) PropertyRef(schema, property string) (string, error) {
 	return name, nil
 }
 
+// ItemBounds describes the minItems and maxItems of an array property declared directly on schema.
+func (d *Doc) ItemBounds(schema, property string) (string, error) {
+	p, ok := dig(d.schemas, schema, "properties", property).(map[string]any)
+	if !ok || p["type"] != "array" {
+		return "", fmt.Errorf("spec: %s.%s is not a directly declared array", schema, property)
+	}
+	bound := func(k string) string {
+		if v, ok := p[k]; ok {
+			return fmt.Sprint(v)
+		}
+		return "unset"
+	}
+	return "minItems=" + bound("minItems") + " maxItems=" + bound("maxItems"), nil
+}
+
 func dig(v any, keys ...string) any {
 	for _, k := range keys {
 		m, ok := v.(map[string]any)
@@ -186,6 +201,9 @@ func Flatten(doc *Doc, schemaName string, side Side) (obj *Object, err error) {
 	if s.Kind != KindObject {
 		fail(schemaName, "root schema is not an object")
 	}
+	if s.Object.FreeForm {
+		fail(schemaName, "root schema is a free-form object")
+	}
 	return s.Object, nil
 }
 
@@ -231,6 +249,10 @@ func (c *ctx) merge(node any, where string, stack []string, viaRef string) *merg
 			continue
 		}
 		if unionKeywords[key] && c.side == Response && responseUnions[viaRef] {
+			continue
+		}
+		// An object with "additionalProperties": true and no properties is free-form, like one without either.
+		if key == "additionalProperties" && n[key] == true && n["type"] == "object" && n["properties"] == nil {
 			continue
 		}
 		unsupported = append(unsupported, strconv.Quote(key))
