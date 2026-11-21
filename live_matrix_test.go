@@ -324,6 +324,129 @@ func TestLiveMatrixPlaceSearch(t *testing.T) {
 	})
 }
 
+func TestLiveMatrixSearchPremier(t *testing.T) {
+	c := liveClient(t)
+	t.Run("include_domains_full_content_result_type_standard", func(t *testing.T) {
+		start := time.Now()
+		res, err := c.Search.SearchPremier(liveContext(t), octen.SearchParams{
+			Query: "EU AI Act guidance", Count: octen.Int(3), ResultType: octen.String("standard"),
+			IncludeDomains: []string{"europa.eu"}, Language: []string{"en"}, Format: octen.String("markdown"),
+			FullContent: &octen.FullContentOptions{Enable: octen.Bool(true), MaxTokens: octen.Int(300)},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		matrixOK(t, res.RequestID, start)
+		if res.Meta == nil || res.Meta.ResultType != "standard" {
+			t.Errorf("meta = %+v, want result_type standard echoed", res.Meta)
+		}
+		if res.Data == nil || len(res.Data.Results) == 0 {
+			t.Fatal("no results to check")
+		}
+		for _, r := range res.Data.Results {
+			if !hostOn(r.URL, "europa.eu") {
+				t.Errorf("result %q is outside europa.eu", r.URL)
+			}
+			if r.FullContent == "" {
+				t.Errorf("result %q has no full_content", r.URL)
+			}
+		}
+	})
+}
+
+func TestLiveMatrixDesignSearch(t *testing.T) {
+	c := liveClient(t)
+	design := func(t *testing.T, p octen.DesignSearchParams) *octen.DesignSearchData {
+		t.Helper()
+		start := time.Now()
+		res, err := c.Search.DesignSearch(liveContext(t), p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		matrixOK(t, res.RequestID, start)
+		if res.Data == nil {
+			t.Fatal("response has no data")
+		}
+		return res.Data
+	}
+
+	// Page sections come back grouped by page; this query returned groups on 2026-11-21.
+	t.Run("defaults_then_group_lookup_positions_1_2", func(t *testing.T) {
+		d := design(t, octen.DesignSearchParams{
+			Query:     octen.String("SaaS landing page hero section"),
+			Images:    &octen.DesignImageOptions{Count: octen.Int(2)},
+			WebSearch: &octen.DesignWebSearchOptions{Count: octen.Int(1)},
+		})
+		if len(d.Images) == 0 || len(d.Results) == 0 {
+			t.Fatalf("images = %d, results = %d, want both", len(d.Images), len(d.Results))
+		}
+		groupID, withFacts, withSnippet := "", 0, 0
+		for _, img := range d.Images {
+			if img.URL == "" {
+				t.Errorf("image without url: %+v", img)
+			}
+			if img.Group != nil && groupID == "" {
+				groupID = img.Group.GroupID
+			}
+			if img.DesignFacts != nil {
+				withFacts++
+			}
+			if img.Snippet != nil && img.Snippet.Code != "" {
+				withSnippet++
+			}
+		}
+		// The control for the switched-off case below: by default the fields are there.
+		t.Logf("with_design_facts=%d with_snippet=%d", withFacts, withSnippet)
+		if withFacts == 0 || withSnippet == 0 {
+			t.Errorf("default images lack design_facts (%d) or snippet (%d)", withFacts, withSnippet)
+		}
+		if groupID == "" {
+			t.Fatal("no image carries a group")
+		}
+		g := design(t, octen.DesignSearchParams{Images: &octen.DesignImageOptions{GroupID: octen.String(groupID), Count: octen.Int(2)}})
+		var positions []int
+		for _, img := range g.Images {
+			if img.Group == nil || img.Group.GroupID != groupID {
+				t.Fatalf("image outside the group: %+v", img.Group)
+			}
+			positions = append(positions, img.Group.Position)
+		}
+		if len(positions) != 2 || positions[0] != 1 || positions[1] != 2 {
+			t.Fatalf("positions = %v, want [1 2]", positions)
+		}
+	})
+	t.Run("design_facts_and_snippet_off_web_include_domains", func(t *testing.T) {
+		d := design(t, octen.DesignSearchParams{
+			Query:     octen.String("SaaS pricing page"),
+			Images:    &octen.DesignImageOptions{Count: octen.Int(2), DesignFacts: octen.Bool(false), Snippet: &octen.DesignSnippetOptions{Enable: octen.Bool(false)}},
+			WebSearch: &octen.DesignWebSearchOptions{Count: octen.Int(2), IncludeDomains: []string{"stripe.com"}},
+		})
+		if len(d.Images) == 0 || len(d.Results) == 0 {
+			t.Fatalf("images = %d, results = %d, want both", len(d.Images), len(d.Results))
+		}
+		for _, img := range d.Images {
+			if img.DesignFacts != nil || img.Snippet != nil {
+				t.Errorf("image %q still has design_facts or snippet", img.URL)
+			}
+		}
+		for _, r := range d.Results {
+			if !hostOn(r.URL, "stripe.com") {
+				t.Errorf("web result %q is outside stripe.com", r.URL)
+			}
+		}
+	})
+	t.Run("images_and_web_disabled", func(t *testing.T) {
+		d := design(t, octen.DesignSearchParams{
+			Query:     octen.String("SaaS pricing page"),
+			Images:    &octen.DesignImageOptions{Enable: octen.Bool(false)},
+			WebSearch: &octen.DesignWebSearchOptions{Enable: octen.Bool(false)},
+		})
+		if len(d.Images) != 0 || len(d.Results) != 0 {
+			t.Fatalf("images = %d, results = %d, want none", len(d.Images), len(d.Results))
+		}
+	})
+}
+
 // Invalid values go to the server on purpose: the SDK checks only blank queries and non-finite numbers locally.
 func TestLiveMatrixNegative(t *testing.T) {
 	c := liveClient(t)
@@ -349,6 +472,24 @@ func TestLiveMatrixNegative(t *testing.T) {
 	}
 	place := func(name string, p octen.PlaceSearchParams) negCase {
 		return negCase{name, func(ctx context.Context) error { _, err := c.PlaceSearch.Search(ctx, p); return err }}
+	}
+	premier := func(name string, p octen.SearchParams) negCase {
+		return negCase{name, func(ctx context.Context) error { _, err := c.Search.SearchPremier(ctx, p); return err }}
+	}
+	image := func(name string, p octen.ImageSearchParams) negCase {
+		return negCase{name, func(ctx context.Context) error { _, err := c.Search.ImageSearch(ctx, p); return err }}
+	}
+	video := func(name string, p octen.VideoSearchParams) negCase {
+		return negCase{name, func(ctx context.Context) error { _, err := c.Search.VideoSearch(ctx, p); return err }}
+	}
+	design := func(name string, p octen.DesignSearchParams) negCase {
+		return negCase{name, func(ctx context.Context) error { _, err := c.Search.DesignSearch(ctx, p); return err }}
+	}
+	textImage := []octen.ImageSearchInput{{Type: "text", Data: octen.String(q)}}
+	textVideo := []octen.VideoSearchInput{{Type: "text", Data: octen.String(q)}}
+	elevenDomains := make([]string, 11)
+	for i := range elevenDomains {
+		elevenDomains[i] = "d" + strconv.Itoa(i) + ".example.com"
 	}
 	cases := []negCase{
 		search("search count=0", octen.SearchParams{Query: q, Count: octen.Int(0)}),
@@ -379,6 +520,15 @@ func TestLiveMatrixNegative(t *testing.T) {
 		place("placeSearch radius=50001", octen.PlaceSearchParams{Query: q, Latitude: octen.Float64(47.6), Longitude: octen.Float64(-122.3), Radius: octen.Int(50001)}),
 		place("placeSearch user_location.type=exact", octen.PlaceSearchParams{Query: q, UserLocation: &octen.PlaceUserLocation{Type: octen.String("exact")}}),
 		place("placeSearch places.count=21", octen.PlaceSearchParams{Query: q, Places: &octen.PlaceCardOptions{Count: octen.Int(21)}}),
+		premier("searchPremier count=0", octen.SearchParams{Query: q, Count: octen.Int(0)}),
+		premier("searchPremier query of 501 chars (max 500)", octen.SearchParams{Query: strings.Repeat("a", 501)}),
+		image("imageSearch count=11", octen.ImageSearchParams{Inputs: textImage, Count: octen.Int(11)}),
+		image("imageSearch 11 include_domains (max 10)", octen.ImageSearchParams{Inputs: textImage, IncludeDomains: elevenDomains}),
+		video("videoSearch count=11", octen.VideoSearchParams{Inputs: textVideo, Count: octen.Int(11)}),
+		design("designSearch query of 501 chars (max 500)", octen.DesignSearchParams{Query: octen.String(strings.Repeat("a", 501))}),
+		design("designSearch images.count=101", octen.DesignSearchParams{Query: octen.String(q), Images: &octen.DesignImageOptions{Count: octen.Int(101)}}),
+		design("designSearch snippet.max_tokens=50 (min 100)", octen.DesignSearchParams{Query: octen.String(q),
+			Images: &octen.DesignImageOptions{Snippet: &octen.DesignSnippetOptions{MaxTokens: octen.Int(50)}}}),
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -436,6 +586,27 @@ func TestLiveMatrixLocalValidation(t *testing.T) {
 			var verr *octen.ValidationError
 			if !errors.As(err, &verr) || verr.Field != "query" {
 				t.Fatalf("want *ValidationError on query, got %T: %v", err, err)
+			}
+			t.Logf("field=%s round_trips=%d", verr.Field, ct.calls.Load())
+		})
+	}
+	inputs := []struct {
+		name, field string
+		run         func() error
+	}{
+		{"imageSearch_no_input", "inputs", func() error { _, err := c.Search.ImageSearch(ctx, octen.ImageSearchParams{}); return err }},
+		{"videoSearch_no_input", "inputs", func() error { _, err := c.Search.VideoSearch(ctx, octen.VideoSearchParams{}); return err }},
+		{"designSearch_no_query_or_group", "query", func() error {
+			_, err := c.Search.DesignSearch(ctx, octen.DesignSearchParams{Images: &octen.DesignImageOptions{GroupID: octen.String(" ")}})
+			return err
+		}},
+	}
+	for _, tc := range inputs {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.run()
+			var verr *octen.ValidationError
+			if !errors.As(err, &verr) || verr.Field != tc.field {
+				t.Fatalf("want *ValidationError on %s, got %T: %v", tc.field, err, err)
 			}
 			t.Logf("field=%s round_trips=%d", verr.Field, ct.calls.Load())
 		})

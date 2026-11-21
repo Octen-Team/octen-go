@@ -109,6 +109,83 @@ func TestLivePlaceSearch(t *testing.T) {
 	requireRequestID(t, res.RequestID, res.Data != nil)
 }
 
+func TestLiveSearchPremier(t *testing.T) {
+	c := liveClient(t)
+	res, err := c.Search.SearchPremier(liveContext(t), octen.SearchParams{Query: "Octen search API", Count: octen.Int(2), ResultType: octen.String("dynamic")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireRequestID(t, res.RequestID, res.Data != nil)
+	if len(res.Data.Results) == 0 {
+		t.Fatal("no results")
+	}
+	if res.Meta == nil || res.Meta.ResultType != "dynamic" {
+		t.Fatalf("meta = %+v, want result_type dynamic echoed", res.Meta)
+	}
+}
+
+func TestLiveImageSearchByText(t *testing.T) {
+	c := liveClient(t)
+	res, err := c.Search.ImageSearch(liveContext(t), octen.ImageSearchParams{
+		Inputs: []octen.ImageSearchInput{{Type: "text", Data: octen.String("golden retriever puppy")}},
+		Count:  octen.Int(2),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireRequestID(t, res.RequestID, res.Data != nil)
+	if n := len(res.Data.Results); n == 0 || n > 2 {
+		t.Fatalf("results = %d, want 1 or 2", n)
+	}
+	for _, r := range res.Data.Results {
+		if r.URL == "" || r.Width == 0 || r.Height == 0 {
+			t.Errorf("incomplete result %+v", r)
+		}
+	}
+}
+
+// Searching by a well-known Commons photo finds that photo again, which a text query for "cat" need not.
+func TestLiveImageSearchByURL(t *testing.T) {
+	c := liveClient(t)
+	res, err := c.Search.ImageSearch(liveContext(t), octen.ImageSearchParams{
+		Inputs: []octen.ImageSearchInput{{Type: "image", URL: octen.String("https://upload.wikimedia.org/wikipedia/commons/a/a3/June_odd-eyed-cat.jpg")}},
+		Count:  octen.Int(2),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireRequestID(t, res.RequestID, res.Data != nil)
+	found := false
+	for _, r := range res.Data.Results {
+		found = found || strings.Contains(strings.ToLower(r.URL+" "+r.SourcePage), "odd-eyed")
+	}
+	if !found {
+		t.Fatalf("no result points at the input photo: %+v", res.Data.Results)
+	}
+}
+
+// Video Search is an invite-only beta; a key without access must surface as ErrPermissionDenied.
+func TestLiveVideoSearch(t *testing.T) {
+	c := liveClient(t)
+	res, err := c.Search.VideoSearch(liveContext(t), octen.VideoSearchParams{
+		Inputs: []octen.VideoSearchInput{{Type: "text", Data: octen.String("how to tie a bowline knot")}},
+		Count:  octen.Int(1),
+	})
+	if errors.Is(err, octen.ErrPermissionDenied) {
+		t.Skipf("the key has no Video Search beta access: %v", err)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireRequestID(t, res.RequestID, res.Data != nil)
+	if n := len(res.Data.Results); n != 1 {
+		t.Fatalf("results = %d, want 1", n)
+	}
+	if r := res.Data.Results[0]; r.URL == "" || r.DurationSeconds <= 0 {
+		t.Errorf("incomplete result %+v", r)
+	}
+}
+
 func TestLiveIncludeDomains(t *testing.T) {
 	c := liveClient(t)
 	res, err := c.Search.Search(liveContext(t), octen.SearchParams{
