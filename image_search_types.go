@@ -2,8 +2,8 @@ package octen
 
 import "encoding/json"
 
-// ImageSearchInput is the input of an image search: a text query (Type "text" with Data), or an
-// image (Type "image") given as a public URL or as base64-encoded Data, exactly one of the two.
+// ImageSearchInput is the input of an image search: a text query (Type "text" with Data and no
+// URL), or an image (Type "image") given as a public URL or as base64-encoded Data, exactly one of the two.
 type ImageSearchInput struct {
 	Type string  `json:"type" enum:"text,image"`
 	URL  *string `json:"url,omitempty"`
@@ -27,6 +27,9 @@ func (p ImageSearchParams) validate() error {
 	case "text":
 		if isBlank(in.Data) {
 			return &ValidationError{Field: "inputs[0].data", Message: "a text input needs a non-empty data string."}
+		}
+		if in.URL != nil {
+			return &ValidationError{Field: "inputs[0].url", Message: "a text input takes data only; url is for image inputs."}
 		}
 	case "image":
 		if (in.URL != nil) == (in.Data != nil) || (isBlank(in.URL) && isBlank(in.Data)) {

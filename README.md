@@ -68,7 +68,7 @@ Responses are the whole JSON envelope: `Code`, `Msg`, `RequestID`, `Data` and `M
 
 Every method takes a `context.Context`, the request struct, and optional [request options](#request-options). `Query` is required, except that Image and Video Search take exactly one entry in `Inputs` instead, and Design Search may leave it out when `Images.GroupID` is set.
 
-The snippets below skip the `err` check after each call and read `Data` directly to stay short; real code checks `err` first and `Data != nil`, as the quick start does.
+The snippets below check `err` and `Data != nil` inline to stay short; `Data` and `Meta` are pointers that are `nil` when the server did not send them.
 
 ```go
 ctx := context.Background()
@@ -81,7 +81,7 @@ web, err := client.Search.Search(ctx, octen.SearchParams{
 	TimeRange:      octen.String("month"),
 	Highlight:      &octen.HighlightOptions{Enable: octen.Bool(true), MaxTokens: octen.Int(300)},
 })
-if err == nil && len(web.Data.Results) > 0 {
+if err == nil && web.Data != nil && len(web.Data.Results) > 0 {
 	fmt.Println(web.Data.Results[0].Highlight)
 }
 
@@ -94,7 +94,7 @@ broad, err := client.Search.BroadSearch(ctx, octen.BroadSearchParams{
 		Language: []string{"en"},
 	},
 })
-if err == nil {
+if err == nil && broad.Data != nil {
 	fmt.Println(broad.Data.Queries)
 	for _, group := range broad.Data.SearchResults {
 		fmt.Println(group.Query, len(group.Results))
@@ -108,7 +108,7 @@ news, err := client.Search.NewsSearch(ctx, octen.NewsSearchParams{
 	TimeRange: octen.String("week"),
 	Subjects:  &octen.NewsSubjectOptions{Enable: octen.Bool(true), Count: octen.Int(3), MaxSubNews: octen.Int(5)},
 })
-if err == nil {
+if err == nil && news.Data != nil {
 	for _, s := range news.Data.Subjects {
 		fmt.Println(s.Name)
 	}
@@ -125,7 +125,7 @@ biz, err := client.Search.BusinessSearch(ctx, octen.BusinessSearchParams{
 		MaxNews:       octen.Int(5),
 	},
 })
-if err == nil {
+if err == nil && biz.Data != nil {
 	for _, e := range biz.Data.Entities {
 		switch {
 		case e.Company != nil:
@@ -160,7 +160,7 @@ places, err := client.PlaceSearch.Search(ctx, octen.PlaceSearchParams{
 	Longitude: octen.Float64(-122.4075),
 	Radius:    octen.Int(2000), // meters, needs latitude and longitude
 })
-if err == nil {
+if err == nil && places.Data != nil {
 	for _, p := range places.Data.Places {
 		fmt.Println(p.Name, p.Distance, p.Rating)
 	}
@@ -173,7 +173,7 @@ premier, err := client.Search.SearchPremier(ctx, octen.SearchParams{
 	Count:          octen.Int(5),
 	IncludeDomains: []string{"europa.eu"},
 })
-if err == nil && premier.Meta != nil {
+if err == nil && premier.Meta != nil && premier.Data != nil {
 	fmt.Println(premier.Meta.ResultType, len(premier.Data.Results))
 }
 
@@ -184,7 +184,7 @@ images, err := client.Search.ImageSearch(ctx, octen.ImageSearchParams{
 	// or a text query:      {Type: "text", Data: octen.String("golden retriever puppy")}
 	Count: octen.Int(5),
 })
-if err == nil {
+if err == nil && images.Data != nil {
 	for _, r := range images.Data.Results {
 		fmt.Println(r.Title, r.URL, r.Width, r.Height)
 	}
@@ -196,7 +196,7 @@ videos, err := client.Search.VideoSearch(ctx, octen.VideoSearchParams{
 	Count:     octen.Int(3),
 	TimeRange: octen.String("year"),
 })
-if err == nil {
+if err == nil && videos.Data != nil {
 	for _, r := range videos.Data.Results {
 		fmt.Println(r.Title, r.URL, r.DurationSeconds)
 	}
@@ -208,7 +208,7 @@ design, err := client.Search.DesignSearch(ctx, octen.DesignSearchParams{
 	Images:    &octen.DesignImageOptions{Count: octen.Int(5), Snippet: &octen.DesignSnippetOptions{MaxTokens: octen.Int(2000)}},
 	WebSearch: &octen.DesignWebSearchOptions{Count: octen.Int(3)},
 })
-if err == nil {
+if err == nil && design.Data != nil {
 	for _, img := range design.Data.Images {
 		fmt.Println(img.Type, img.URL, img.DesignFacts)
 		if img.Group != nil {
@@ -227,7 +227,7 @@ Web Search Premier takes `SearchParams` and returns `*SearchResponse`, the same 
 
 ### Local validation
 
-Before sending anything the SDK checks that `Query` is not blank (surrounding whitespace does not count) and rejects `NaN` and `±Inf` anywhere in the params, because `encoding/json` cannot encode them; both are reported as a `*ValidationError` with the offending field. Image and Video Search instead need exactly one input in `Inputs` (`Field` is `inputs`) whose `Type` is `text` or `image` for Image Search and `text` for Video Search (`inputs[0].type`); a text input needs non-blank `Data` (`inputs[0].data`), and an image input needs exactly one of a non-blank `URL` or base64 `Data` (`inputs[0]`); Design Search needs a non-blank `Query` or a non-blank `Images.GroupID` (`Field` is `query`). Apart from the input `Type`, it does not check value ranges or enum values (for example `Count` or `TimeRange`); out-of-range values come back from the server as a 400 and match `ErrBadRequest`.
+Before sending anything the SDK checks that `Query` is not blank (surrounding whitespace does not count) and rejects `NaN` and `±Inf` anywhere in the params, because `encoding/json` cannot encode them; both are reported as a `*ValidationError` with the offending field. Image and Video Search instead need exactly one input in `Inputs` (`Field` is `inputs`) whose `Type` is `text` or `image` for Image Search and `text` for Video Search (`inputs[0].type`); a text input needs non-blank `Data` (`inputs[0].data`) and no `URL` (`inputs[0].url`), and an image input needs exactly one of a non-blank `URL` or base64 `Data` (`inputs[0]`); Design Search needs a non-blank `Query` or a non-blank `Images.GroupID` (`Field` is `query`). Apart from the input `Type`, it does not check value ranges or enum values (for example `Count` or `TimeRange`); out-of-range values come back from the server as a 400 and match `ErrBadRequest`.
 
 Slices are omitted from the request when they are empty, so an empty slice cannot be sent explicitly.
 

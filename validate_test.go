@@ -109,6 +109,8 @@ func TestNewEndpointInputsValidated(t *testing.T) {
 		{"image two inputs", ImageSearchParams{Inputs: []ImageSearchInput{text("a"), text("b")}}, "inputs"},
 		{"image text without data", ImageSearchParams{Inputs: []ImageSearchInput{{Type: "text"}}}, "inputs[0].data"},
 		{"image text blank data", ImageSearchParams{Inputs: []ImageSearchInput{text(" \t")}}, "inputs[0].data"},
+		{"image text with url", ImageSearchParams{Inputs: []ImageSearchInput{{Type: "text", Data: String("cats"), URL: String("https://example.com/a.jpg")}}}, "inputs[0].url"},
+		{"image text with empty url", ImageSearchParams{Inputs: []ImageSearchInput{{Type: "text", Data: String("cats"), URL: String("")}}}, "inputs[0].url"},
 		{"image without url or data", ImageSearchParams{Inputs: []ImageSearchInput{{Type: "image"}}}, "inputs[0]"},
 		{"image blank url", ImageSearchParams{Inputs: []ImageSearchInput{{Type: "image", URL: String(" ")}}}, "inputs[0]"},
 		{"image blank data", ImageSearchParams{Inputs: []ImageSearchInput{{Type: "image", Data: String("")}}}, "inputs[0]"},

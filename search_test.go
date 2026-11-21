@@ -251,6 +251,10 @@ func TestValidationSendsNothing(t *testing.T) {
 			_, err := c.Search.ImageSearch(ctx, ImageSearchParams{Inputs: []ImageSearchInput{{Type: "image", URL: String("https://example.com/a.jpg"), Data: String("aGVsbG8=")}}})
 			return err
 		}},
+		{"image text with url", "inputs[0].url", func() error {
+			_, err := c.Search.ImageSearch(ctx, ImageSearchParams{Inputs: []ImageSearchInput{{Type: "text", Data: String("cats"), URL: String("https://example.com/a.jpg")}}})
+			return err
+		}},
 		{"image unknown type", "inputs[0].type", func() error {
 			_, err := c.Search.ImageSearch(ctx, ImageSearchParams{Inputs: []ImageSearchInput{{Type: "video", URL: String("https://example.com/a.mp4")}}})
 			return err
@@ -454,7 +458,7 @@ func TestNewEndpointsSendEveryParameter(t *testing.T) {
 				return err
 			}},
 		{"design", "/design-search",
-			`{"query":"hero","images":{"enable":true,"count":3,"design_facts":false,"snippet":{"enable":false,"max_tokens":333},"group_id":"pg_1"},` +
+			`{"query":"hero","images":{"enable":true,"count":3,"design_facts":false,"snippet":{"enable":true,"max_tokens":333},"group_id":"pg_1"},` +
 				`"web_search":{"enable":false,"count":9,"highlight":{"enable":true,"max_tokens":444},"full_content":{"enable":true,"max_tokens":555},` +
 				`"include_domains":["inc.example"],"exclude_domains":["exc.example"],"language":["fr"],"time_basis":"crawled","time_range":"y",` +
 				`"start_time":"2024-01-01T00:00:00Z","end_time":"2024-12-31T00:00:00Z"}}`,
@@ -462,7 +466,7 @@ func TestNewEndpointsSendEveryParameter(t *testing.T) {
 				_, err := c.Search.DesignSearch(ctx, DesignSearchParams{
 					Query: String("hero"),
 					Images: &DesignImageOptions{Enable: Bool(true), Count: Int(3), DesignFacts: Bool(false),
-						Snippet: &DesignSnippetOptions{Enable: Bool(false), MaxTokens: Int(333)}, GroupID: String("pg_1")},
+						Snippet: &DesignSnippetOptions{Enable: Bool(true), MaxTokens: Int(333)}, GroupID: String("pg_1")},
 					WebSearch: &DesignWebSearchOptions{Enable: Bool(false), Count: Int(9),
 						Highlight:      &HighlightOptions{Enable: Bool(true), MaxTokens: Int(444)},
 						FullContent:    &FullContentOptions{Enable: Bool(true), MaxTokens: Int(555)},
