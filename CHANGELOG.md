@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- `Search.SearchPremier` for Web Search Premier (`POST /search-premier`). It takes `SearchParams` and returns `*SearchResponse`, like `Search`.
+- `Search.ImageSearch` (`POST /image-search`) with `ImageSearchParams`; `Inputs` must hold exactly one text or image input.
+- `Search.VideoSearch` (`POST /video-search`) with `VideoSearchParams`; `Inputs` must hold exactly one text input. Video Search is an invite-only beta.
+- `Search.DesignSearch` (`POST /design-search`) with `DesignSearchParams`: design references as image results (type, screenshot, group, design facts, snippet) plus web results. `Query` is optional when `Images.GroupID` is set, which returns the images of that page or deck in order.
+- Local checks for the new endpoints: one input with non-blank `Data` or `URL` for Image and Video Search, and a non-blank `Query` or `Images.GroupID` for Design Search, reported as `*ValidationError` before anything is sent.
+- The contract test and the spec-drift check cover the four new endpoints.
+
 ## 0.1.0
 
 Initial release.
