@@ -354,23 +354,26 @@ For billing-sensitive jobs, use `octen.WithMaxRetries(0)` and handle retries you
 
 ## Differences from the Python SDK
 
-Compared with `octen-py` 0.11.1:
+Compared with `octen-py` 0.13.0:
 
 | Area | `octen-py` | `octen-go` |
 |---|---|---|
 | Parameter validation | Checks value ranges (such as `count`) locally | Checks only the required inputs (a non-blank `Query`, one Image or Video Search input) and that numbers are finite; ranges are checked by the server (400) |
 | Image Search input | `query=` or `image_url=` keyword (or a raw `inputs=` list) | One `ImageSearchInput` in `Inputs` |
+| Video Search input | `query=` keyword | One `VideoSearchInput` in `Inputs` |
 | Unknown keys in nested request objects | Top level rejected, nested `highlight` / `full_content` allowed | Not possible: requests are typed structs |
-| Client timeout | Retried | Not retried |
+| Client timeout | Retried by default; with `retry_after_send=False` raised at once, except connect and pool timeouts, which never reached the server and are always retried | Not retried |
 | `Retry-After` | 429 only | 429 and 503; above 60 s no retry |
-| Network errors | All retried | Only errors before the request is sent (dial and DNS) |
-| 2xx responses | Validated against the full response model | Judged only by the rules under [Errors](#errors), plus decoding into the typed response |
+| Network errors | Retried by default; with `retry_after_send=False` only errors before the request is sent (connect failures) are retried | Only errors before the request is sent (dial and DNS) |
+| Opting out of re-sending after send | Keyword-only client option `retry_after_send` (default `True`) | No option; never re-sends after a timeout, a cancelled context or a connection dropped after sending |
+| `request_sent` on errors | `OctenTimeoutError` and `OctenConnectionError` carry `request_sent` (`False`, `True` or `None`) | Not exposed |
+| 2xx responses | Checks only the top-level fields each endpoint's model requires (always a `data` object); the contents of `data` are returned as plain dicts, not validated | Judged only by the rules under [Errors](#errors), plus decoding into the typed response |
 | Error classes | Dedicated classes for 401 and 429 | Also 403, 400/422 and 5xx sentinels |
 | Auth headers | `x-api-key` and `Authorization: Bearer` | `x-api-key` only |
 | Deprecated `topic` parameter, and `html_snippet` on Image Search | Still present | Not exposed |
 | Broad Search timeout | 30 s like every endpoint | 120 s, separate default, unless a client timeout is set explicitly |
 
-Because the Python SDK retries more situations (client timeouts and every network error), it carries the double-billing risks described above and more.
+Because the Python SDK by default retries more situations (client timeouts and every network error), it carries the double-billing risks described above and more unless `retry_after_send=False` is set.
 
 ## Differences from the TypeScript SDK
 
