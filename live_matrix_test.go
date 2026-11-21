@@ -380,7 +380,7 @@ func TestLiveMatrixDesignSearch(t *testing.T) {
 		if len(d.Images) == 0 || len(d.Results) == 0 {
 			t.Fatalf("images = %d, results = %d, want both", len(d.Images), len(d.Results))
 		}
-		groupID, withFacts, withSnippet := "", 0, 0
+		groupID := ""
 		for _, img := range d.Images {
 			if img.URL == "" {
 				t.Errorf("image without url: %+v", img)
@@ -388,17 +388,6 @@ func TestLiveMatrixDesignSearch(t *testing.T) {
 			if img.Group != nil && groupID == "" {
 				groupID = img.Group.GroupID
 			}
-			if img.DesignFacts != nil {
-				withFacts++
-			}
-			if img.Snippet != nil && img.Snippet.Code != "" {
-				withSnippet++
-			}
-		}
-		// The control for the switched-off case below: by default the fields are there.
-		t.Logf("with_design_facts=%d with_snippet=%d", withFacts, withSnippet)
-		if withFacts == 0 || withSnippet == 0 {
-			t.Errorf("default images lack design_facts (%d) or snippet (%d)", withFacts, withSnippet)
 		}
 		if groupID == "" {
 			t.Fatal("no image carries a group")
@@ -416,6 +405,25 @@ func TestLiveMatrixDesignSearch(t *testing.T) {
 		}
 	})
 	t.Run("design_facts_and_snippet_off_web_include_domains", func(t *testing.T) {
+		// Control: the same query with defaults returns both fields, so their absence below is the option at work.
+		control := design(t, octen.DesignSearchParams{
+			Query:     octen.String("SaaS pricing page"),
+			Images:    &octen.DesignImageOptions{Count: octen.Int(2)},
+			WebSearch: &octen.DesignWebSearchOptions{Enable: octen.Bool(false)},
+		})
+		withFacts, withSnippet := 0, 0
+		for _, img := range control.Images {
+			if img.DesignFacts != nil {
+				withFacts++
+			}
+			if img.Snippet != nil && img.Snippet.Code != "" {
+				withSnippet++
+			}
+		}
+		t.Logf("control images=%d with_design_facts=%d with_snippet=%d", len(control.Images), withFacts, withSnippet)
+		if withFacts == 0 || withSnippet == 0 {
+			t.Fatalf("control images lack design_facts (%d) or snippet (%d)", withFacts, withSnippet)
+		}
 		d := design(t, octen.DesignSearchParams{
 			Query:     octen.String("SaaS pricing page"),
 			Images:    &octen.DesignImageOptions{Count: octen.Int(2), DesignFacts: octen.Bool(false), Snippet: &octen.DesignSnippetOptions{Enable: octen.Bool(false)}},

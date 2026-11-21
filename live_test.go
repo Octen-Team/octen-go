@@ -2,7 +2,9 @@ package octen_test
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -164,16 +166,77 @@ func TestLiveImageSearchByURL(t *testing.T) {
 	}
 }
 
-// Video Search is an invite-only beta; a key without access must surface as ErrPermissionDenied.
+// The base64 form of the same Commons photo, as a small thumbnail downloaded here, finds it too.
+// Commons serves only its standard thumbnail widths (330 px is one); others return 400.
+func TestLiveImageSearchByBase64(t *testing.T) {
+	c := liveClient(t)
+	ctx := liveContext(t)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		"https://upload.wikimedia.org/wikipedia/commons/thumb/a/a3/June_odd-eyed-cat.jpg/330px-June_odd-eyed-cat.jpg", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("User-Agent", "octen-go-sdk-live-test")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("download test image: %v", err)
+	}
+	img, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	resp.Body.Close()
+	if err != nil || resp.StatusCode != http.StatusOK || len(img) == 0 {
+		t.Fatalf("download test image: status %d, %d bytes, err %v", resp.StatusCode, len(img), err)
+	}
+	t.Logf("image_bytes=%d", len(img))
+	res, err := c.Search.ImageSearch(ctx, octen.ImageSearchParams{
+		Inputs: []octen.ImageSearchInput{{Type: "image", Data: octen.String(base64.StdEncoding.EncodeToString(img))}},
+		Count:  octen.Int(2),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireRequestID(t, res.RequestID, res.Data != nil)
+	found := false
+	for _, r := range res.Data.Results {
+		found = found || strings.Contains(strings.ToLower(r.URL+" "+r.SourcePage), "odd-eyed")
+	}
+	if !found {
+		t.Fatalf("no result points at the input photo: %+v", res.Data.Results)
+	}
+}
+
+func TestLiveImageSearchIncludeDomains(t *testing.T) {
+	c := liveClient(t)
+	res, err := c.Search.ImageSearch(liveContext(t), octen.ImageSearchParams{
+		Inputs:         []octen.ImageSearchInput{{Type: "text", Data: octen.String("Golden Gate Bridge")}},
+		Count:          octen.Int(3),
+		IncludeDomains: []string{"wikipedia.org"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireRequestID(t, res.RequestID, res.Data != nil)
+	if len(res.Data.Results) == 0 {
+		t.Fatal("no results to check")
+	}
+	for _, r := range res.Data.Results {
+		u, err := url.Parse(r.SourcePage)
+		host := ""
+		if err == nil {
+			host = strings.ToLower(u.Hostname())
+		}
+		if host != "wikipedia.org" && !strings.HasSuffix(host, ".wikipedia.org") {
+			t.Errorf("source_page %q is outside wikipedia.org", r.SourcePage)
+		}
+	}
+}
+
+// Video Search is an invite-only beta; the live key has access, so any error fails the test.
 func TestLiveVideoSearch(t *testing.T) {
 	c := liveClient(t)
 	res, err := c.Search.VideoSearch(liveContext(t), octen.VideoSearchParams{
 		Inputs: []octen.VideoSearchInput{{Type: "text", Data: octen.String("how to tie a bowline knot")}},
 		Count:  octen.Int(1),
 	})
-	if errors.Is(err, octen.ErrPermissionDenied) {
-		t.Skipf("the key has no Video Search beta access: %v", err)
-	}
 	if err != nil {
 		t.Fatal(err)
 	}
