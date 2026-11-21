@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -460,6 +461,10 @@ func TestLiveMatrixNegative(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			// Video Search is an invite-only beta, so its cases follow the same opt-in as the success cases.
+			if strings.HasPrefix(tc.name, "videoSearch") && os.Getenv("OCTEN_LIVE_VIDEO") != "1" {
+				t.Skip("Video Search cases need OCTEN_LIVE_VIDEO=1 and a key with beta access")
+			}
 			start := time.Now()
 			err := tc.run(liveContext(t))
 			var apiErr *octen.APIError
