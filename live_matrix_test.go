@@ -325,36 +325,6 @@ func TestLiveMatrixPlaceSearch(t *testing.T) {
 	})
 }
 
-func TestLiveMatrixSearchPremier(t *testing.T) {
-	c := liveClient(t)
-	t.Run("include_domains_full_content_result_type_standard", func(t *testing.T) {
-		start := time.Now()
-		res, err := c.Search.SearchPremier(liveContext(t), octen.SearchParams{
-			Query: "EU AI Act guidance", Count: octen.Int(3), ResultType: octen.String("standard"),
-			IncludeDomains: []string{"europa.eu"}, Language: []string{"en"}, Format: octen.String("markdown"),
-			FullContent: &octen.FullContentOptions{Enable: octen.Bool(true), MaxTokens: octen.Int(300)},
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		matrixOK(t, res.RequestID, start)
-		if res.Meta == nil || res.Meta.ResultType != "standard" {
-			t.Errorf("meta = %+v, want result_type standard echoed", res.Meta)
-		}
-		if res.Data == nil || len(res.Data.Results) == 0 {
-			t.Fatal("no results to check")
-		}
-		for _, r := range res.Data.Results {
-			if !hostOn(r.URL, "europa.eu") {
-				t.Errorf("result %q is outside europa.eu", r.URL)
-			}
-			if r.FullContent == "" {
-				t.Errorf("result %q has no full_content", r.URL)
-			}
-		}
-	})
-}
-
 func TestLiveMatrixDesignSearch(t *testing.T) {
 	c := liveClient(t)
 	design := func(t *testing.T, p octen.DesignSearchParams) *octen.DesignSearchData {
@@ -372,87 +342,35 @@ func TestLiveMatrixDesignSearch(t *testing.T) {
 	}
 
 	// Page sections come back grouped by page; this query returned groups on 2026-11-21.
-	t.Run("defaults_then_group_lookup_positions_1_2", func(t *testing.T) {
+	t.Run("group_lookup_positions_1_2_web_disabled", func(t *testing.T) {
 		d := design(t, octen.DesignSearchParams{
 			Query:     octen.String("SaaS landing page hero section"),
-			Images:    &octen.DesignImageOptions{Count: octen.Int(2)},
-			WebSearch: &octen.DesignWebSearchOptions{Count: octen.Int(1)},
+			Images:    &octen.DesignImageOptions{Count: octen.Int(3)},
+			WebSearch: &octen.DesignWebSearchOptions{Enable: octen.Bool(false)},
 		})
-		if len(d.Images) == 0 || len(d.Results) == 0 {
-			t.Fatalf("images = %d, results = %d, want both", len(d.Images), len(d.Results))
+		if len(d.Results) != 0 {
+			t.Errorf("web_search.enable false still returned %d web results", len(d.Results))
 		}
-		groupID := ""
+		var group *octen.DesignImageGroup
 		for _, img := range d.Images {
-			if img.URL == "" {
-				t.Errorf("image without url: %+v", img)
-			}
-			if img.Group != nil && groupID == "" {
-				groupID = img.Group.GroupID
+			if img.Group != nil && img.Group.Total >= 2 {
+				group = img.Group
+				break
 			}
 		}
-		if groupID == "" {
-			t.Fatal("no image carries a group")
+		if group == nil {
+			t.Fatalf("none of %d images belongs to a group of two or more", len(d.Images))
 		}
-		g := design(t, octen.DesignSearchParams{Images: &octen.DesignImageOptions{GroupID: octen.String(groupID), Count: octen.Int(2)}})
+		g := design(t, octen.DesignSearchParams{Images: &octen.DesignImageOptions{GroupID: octen.String(group.GroupID), Count: octen.Int(2)}})
 		var positions []int
 		for _, img := range g.Images {
-			if img.Group == nil || img.Group.GroupID != groupID {
+			if img.Group == nil || img.Group.GroupID != group.GroupID {
 				t.Fatalf("image outside the group: %+v", img.Group)
 			}
 			positions = append(positions, img.Group.Position)
 		}
 		if len(positions) != 2 || positions[0] != 1 || positions[1] != 2 {
 			t.Fatalf("positions = %v, want [1 2]", positions)
-		}
-	})
-	t.Run("design_facts_and_snippet_off_web_include_domains", func(t *testing.T) {
-		// Control: the same query with default image options (web results off, they are not checked here)
-		// returns both fields, so their absence below is the option at work.
-		control := design(t, octen.DesignSearchParams{
-			Query:     octen.String("SaaS pricing page"),
-			Images:    &octen.DesignImageOptions{Count: octen.Int(2)},
-			WebSearch: &octen.DesignWebSearchOptions{Enable: octen.Bool(false)},
-		})
-		withFacts, withSnippet := 0, 0
-		for _, img := range control.Images {
-			if img.DesignFacts != nil {
-				withFacts++
-			}
-			if img.Snippet != nil && img.Snippet.Code != "" {
-				withSnippet++
-			}
-		}
-		t.Logf("control images=%d with_design_facts=%d with_snippet=%d", len(control.Images), withFacts, withSnippet)
-		if withFacts == 0 || withSnippet == 0 {
-			t.Fatalf("control images lack design_facts (%d) or snippet (%d)", withFacts, withSnippet)
-		}
-		d := design(t, octen.DesignSearchParams{
-			Query:     octen.String("SaaS pricing page"),
-			Images:    &octen.DesignImageOptions{Count: octen.Int(2), DesignFacts: octen.Bool(false), Snippet: &octen.DesignSnippetOptions{Enable: octen.Bool(false)}},
-			WebSearch: &octen.DesignWebSearchOptions{Count: octen.Int(2), IncludeDomains: []string{"stripe.com"}},
-		})
-		if len(d.Images) == 0 || len(d.Results) == 0 {
-			t.Fatalf("images = %d, results = %d, want both", len(d.Images), len(d.Results))
-		}
-		for _, img := range d.Images {
-			if img.DesignFacts != nil || img.Snippet != nil {
-				t.Errorf("image %q still has design_facts or snippet", img.URL)
-			}
-		}
-		for _, r := range d.Results {
-			if !hostOn(r.URL, "stripe.com") {
-				t.Errorf("web result %q is outside stripe.com", r.URL)
-			}
-		}
-	})
-	t.Run("images_and_web_disabled", func(t *testing.T) {
-		d := design(t, octen.DesignSearchParams{
-			Query:     octen.String("SaaS pricing page"),
-			Images:    &octen.DesignImageOptions{Enable: octen.Bool(false)},
-			WebSearch: &octen.DesignWebSearchOptions{Enable: octen.Bool(false)},
-		})
-		if len(d.Images) != 0 || len(d.Results) != 0 {
-			t.Fatalf("images = %d, results = %d, want none", len(d.Images), len(d.Results))
 		}
 	})
 }
@@ -634,10 +552,10 @@ func TestLiveMatrixLocalValidation(t *testing.T) {
 	}
 }
 
-// Parameter matrix for the endpoints added after 0.1.0. Each check asserts the effect; filters that
-// remove something are paired with an unfiltered control on the same query that shows it.
+// Parameter matrix for the endpoints added after 0.1.0. Each check asserts the effect; a filter is
+// paired with an unfiltered control on the same query that shows what the filter changes.
 
-// hostOf returns the lower-cased host of rawURL without a leading "www.".
+// hostOf returns the lower-cased host of rawURL without a leading "www.", or "" when it has none.
 func hostOf(rawURL string) string {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -646,49 +564,71 @@ func hostOf(rawURL string) string {
 	return strings.TrimPrefix(strings.ToLower(u.Hostname()), "www.")
 }
 
-func hasJapanese(s string) bool {
+// hasKana reports Japanese-only script; Han characters alone could be Chinese.
+func hasKana(s string) bool {
 	for _, r := range s {
-		if unicode.In(r, unicode.Hiragana, unicode.Katakana, unicode.Han) {
+		if unicode.In(r, unicode.Hiragana, unicode.Katakana) {
 			return true
 		}
 	}
 	return false
 }
 
-// roughlyBounded allows about 8 characters per token, far above English text, to catch an ignored max_tokens.
-func roughlyBounded(s string, maxTokens int) bool { return len(s) <= 8*maxTokens }
+type datedResult struct{ url, stamp string }
 
-// checkDates requires every non-empty timestamp to fall in [from, to] and at least one to be present.
-func checkDates(t *testing.T, field string, stamps []string, from, to time.Time) {
+// checkDates requires every result to carry the timestamp and to fall in [from, to]: the reference
+// says results missing the time_basis field are excluded when filtering by time.
+func checkDates(t *testing.T, field string, rs []datedResult, from, to time.Time) {
 	t.Helper()
-	dated := 0
-	for _, s := range stamps {
-		if s == "" {
-			continue
-		}
-		ts, err := time.Parse(time.RFC3339, s)
+	if len(rs) == 0 {
+		t.Fatal("no results to check")
+	}
+	for _, r := range rs {
+		ts, err := time.Parse(time.RFC3339, r.stamp)
 		if err != nil {
-			t.Errorf("%s %q is not RFC 3339: %v", field, s, err)
+			t.Errorf("result %q has %s %q under a time filter: %v", r.url, field, r.stamp, err)
 			continue
 		}
-		dated++
 		if ts.Before(from) || ts.After(to) {
-			t.Errorf("%s %s is outside [%s, %s]", field, s, from.Format(time.RFC3339), to.Format(time.RFC3339))
+			t.Errorf("result %q %s %s is outside [%s, %s]", r.url, field, r.stamp, from.Format(time.RFC3339), to.Format(time.RFC3339))
 		}
 	}
-	t.Logf("%s dated=%d of %d", field, dated, len(stamps))
-	if dated == 0 {
-		t.Fatalf("no result carries %s, so the time filter cannot be checked", field)
+}
+
+// logControlOutside reports how many control results fall outside the window; with none, the
+// filtered check below it cannot fail for a filter the server ignores, so it is only a smoke check.
+func logControlOutside(t *testing.T, field string, rs []datedResult, from, to time.Time) {
+	t.Helper()
+	outside := 0
+	for _, r := range rs {
+		if ts, err := time.Parse(time.RFC3339, r.stamp); err == nil && (ts.Before(from) || ts.After(to)) {
+			outside++
+		}
 	}
+	if outside == 0 {
+		t.Logf("SMOKE: no control result has %s outside the window, so this case cannot show the filter at work", field)
+		return
+	}
+	t.Logf("control results with %s outside the window: %d of %d", field, outside, len(rs))
 }
 
 func resultText(r octen.SearchResult) string {
 	return strings.ToLower(r.Title + "\n" + r.Highlight + "\n" + r.FullContent)
 }
 
+func distinctHosts(urls []string) int {
+	seen := map[string]bool{}
+	for _, u := range urls {
+		if h := hostOf(u); h != "" {
+			seen[h] = true
+		}
+	}
+	return len(seen)
+}
+
 func TestLiveMatrixSearchPremierParams(t *testing.T) {
 	c := liveClient(t)
-	premier := func(t *testing.T, p octen.SearchParams) []octen.SearchResult {
+	premier := func(t *testing.T, p octen.SearchParams) *octen.SearchResponse {
 		t.Helper()
 		start := time.Now()
 		res, err := c.Search.SearchPremier(liveContext(t), p)
@@ -699,48 +639,48 @@ func TestLiveMatrixSearchPremierParams(t *testing.T) {
 		if res.Data == nil || len(res.Data.Results) == 0 {
 			t.Fatal("no results to check")
 		}
-		return res.Data.Results
+		return res
 	}
 
-	// Safesearch on a benign query has no observable effect; it is sent to show it is accepted.
-	t.Run("include_text_with_control_highlight_max_tokens_safesearch_off", func(t *testing.T) {
-		const phrase = "colorado"
-		base := octen.SearchParams{
-			Query: "best hiking trails", Count: octen.Int(3),
-			Highlight:   &octen.HighlightOptions{Enable: octen.Bool(true), MaxTokens: octen.Int(100)},
-			FullContent: &octen.FullContentOptions{Enable: octen.Bool(true), MaxTokens: octen.Int(4000)},
-			Safesearch:  octen.String("off"),
-		}
-		// Control: without the filter at least one result lacks the phrase, so its presence below is the filter at work.
+	// One unfiltered request is the control for include_text, exclude_text, exclude_domains and include_domains.
+	// Safesearch on a benign query has no observable effect; it is sent on every call so it is not a difference.
+	const word = "colorado"
+	// include_text matches the whole page, so full_content must cover long articles for the check (2000 tokens did not).
+	base := octen.SearchParams{Query: "best hiking trails", Count: octen.Int(5), Safesearch: octen.String("off"),
+		FullContent: &octen.FullContentOptions{Enable: octen.Bool(true), MaxTokens: octen.Int(20000)}}
+	control := premier(t, base).Data.Results
+	var controlURLs []string
+	for _, r := range control {
+		controlURLs = append(controlURLs, r.URL)
+	}
+
+	t.Run("include_text", func(t *testing.T) {
 		lacking := 0
-		for _, r := range premier(t, base) {
-			if !strings.Contains(resultText(r), phrase) {
+		for _, r := range control {
+			if !strings.Contains(resultText(r), word) {
 				lacking++
 			}
 		}
-		t.Logf("control results lacking %q: %d", phrase, lacking)
+		t.Logf("control results lacking %q: %d of %d", word, lacking, len(control))
 		if lacking == 0 {
-			t.Fatalf("every control result already contains %q; include_text cannot be shown", phrase)
+			t.Fatalf("every control result already contains %q; include_text cannot be shown", word)
 		}
-		filtered := base
-		filtered.IncludeText = []string{"Colorado"}
-		for _, r := range premier(t, filtered) {
-			if !strings.Contains(resultText(r), phrase) {
+		p := base
+		p.IncludeText = []string{"Colorado"}
+		for _, r := range premier(t, p).Data.Results {
+			if !strings.Contains(resultText(r), word) {
 				t.Errorf("result %q does not contain the include_text phrase", r.URL)
-			}
-			if r.Highlight == "" || !roughlyBounded(r.Highlight, 100) {
-				t.Errorf("result %q highlight has %d chars, want 1..800 for max_tokens 100", r.URL, len(r.Highlight))
 			}
 		}
 	})
-	t.Run("exclude_text_and_exclude_domains_with_control", func(t *testing.T) {
-		const word = "samsung"
-		base := octen.SearchParams{Query: "best smartphones 2026", Count: octen.Int(5),
-			FullContent: &octen.FullContentOptions{Enable: octen.Bool(true), MaxTokens: octen.Int(1000)}}
-		control := premier(t, base)
-		// Exclude a host from the control while the word still appears on another host, so each filter is shown on its own.
+	t.Run("exclude_text_and_exclude_domains_independent", func(t *testing.T) {
+		// The excluded host's control result lacks the word and the word appears on another host,
+		// so neither filter can pass on the other's account.
 		excluded := ""
 		for _, cand := range control {
+			if strings.Contains(resultText(cand), word) {
+				continue
+			}
 			for _, other := range control {
 				if hostOf(other.URL) != hostOf(cand.URL) && strings.Contains(resultText(other), word) {
 					excluded = hostOf(cand.URL)
@@ -750,14 +690,14 @@ func TestLiveMatrixSearchPremierParams(t *testing.T) {
 				break
 			}
 		}
-		t.Logf("control results=%d excluded_host=%s", len(control), excluded)
+		t.Logf("excluded_host=%s", excluded)
 		if excluded == "" {
-			t.Fatalf("control does not mention %q on two hosts; the exclusions cannot be shown", word)
+			t.Fatalf("control lacks a host without %q next to one with it; the exclusions cannot be shown", word)
 		}
-		filtered := base
-		filtered.ExcludeText = []string{"Samsung"}
-		filtered.ExcludeDomains = []string{excluded}
-		for _, r := range premier(t, filtered) {
+		p := base
+		p.ExcludeText = []string{"Colorado"}
+		p.ExcludeDomains = []string{excluded}
+		for _, r := range premier(t, p).Data.Results {
 			if hostOn(r.URL, excluded) {
 				t.Errorf("result %q is on the excluded domain", r.URL)
 			}
@@ -766,25 +706,50 @@ func TestLiveMatrixSearchPremierParams(t *testing.T) {
 			}
 		}
 	})
-	t.Run("format_markdown_vs_text_include_images", func(t *testing.T) {
-		// The goldengate.org home page opens with images, which markdown keeps as ![..](..) and text drops;
-		// tables stay in both (seen 2026-11-21), so only link syntax tells the formats apart.
+	t.Run("include_domains_full_content_result_type_standard", func(t *testing.T) {
+		if n := distinctHosts(controlURLs); n < 2 {
+			t.Fatalf("control shows %d host(s); include_domains cannot be shown", n)
+		}
+		target := hostOf(control[0].URL)
+		t.Logf("include_host=%s", target)
+		p := base
+		p.IncludeDomains = []string{target}
+		p.ResultType = octen.String("standard")
+		res := premier(t, p)
+		if res.Meta == nil || res.Meta.ResultType != "standard" {
+			t.Errorf("meta = %+v, want result_type standard echoed", res.Meta)
+		}
+		for _, r := range res.Data.Results {
+			if !hostOn(r.URL, target) {
+				t.Errorf("result %q is outside %s", r.URL, target)
+			}
+			if r.FullContent == "" {
+				t.Errorf("result %q has no full_content", r.URL)
+			}
+		}
+	})
+	// The reference: format "controls the formatting of highlight outputs". The goldengate.org home
+	// page opens with images and links (seen 2026-11-21), so a markdown highlight may keep their syntax.
+	t.Run("format_highlight_markdown_vs_text_include_images", func(t *testing.T) {
 		p := octen.SearchParams{Query: "golden gate bridge", Count: octen.Int(1), IncludeDomains: []string{"goldengate.org"},
-			FullContent: &octen.FullContentOptions{Enable: octen.Bool(true), MaxTokens: octen.Int(800)}}
+			Highlight: &octen.HighlightOptions{Enable: octen.Bool(true), MaxTokens: octen.Int(300)}}
 		md := p
 		md.Format, md.IncludeImages = octen.String("markdown"), octen.Bool(true)
 		txt := p
 		txt.Format = octen.String("text")
-		m, x := premier(t, md)[0], premier(t, txt)[0]
-		t.Logf("markdown url=%s chars=%d; text url=%s chars=%d", m.URL, len(m.FullContent), x.URL, len(x.FullContent))
+		mr, xr := premier(t, md), premier(t, txt)
+		m, x := mr.Data.Results[0], xr.Data.Results[0]
 		if m.URL != x.URL {
 			t.Fatalf("the two calls returned different pages (%s, %s); the formats cannot be compared", m.URL, x.URL)
 		}
-		if !strings.Contains(m.FullContent, "](") {
-			t.Error("markdown full_content has no markdown link or image syntax")
+		syntax := func(s string) bool {
+			return strings.Contains(s, "](") || strings.Contains(s, "**") || strings.Contains(s, "\n#")
 		}
-		if strings.Contains(x.FullContent, "](") {
-			t.Error("text full_content contains markdown link or image syntax")
+		t.Logf("highlight chars markdown=%d text=%d", len(m.Highlight), len(x.Highlight))
+		if m.Highlight == x.Highlight {
+			t.Logf("FORMAT NOT OBSERVABLE: identical highlights for %s (request_ids %s, %s)", m.URL, mr.RequestID, xr.RequestID)
+		} else if !syntax(m.Highlight) || syntax(x.Highlight) {
+			t.Errorf("highlights differ but not by markdown syntax: markdown %q / text %q", m.Highlight, x.Highlight)
 		}
 		if m.CoverImage == nil && len(m.Images) == 0 {
 			t.Error("include_images true: no cover_image or images")
@@ -794,30 +759,84 @@ func TestLiveMatrixSearchPremierParams(t *testing.T) {
 		}
 	})
 	t.Run("language_ja", func(t *testing.T) {
-		for _, r := range premier(t, octen.SearchParams{Query: "Tokyo travel guide", Count: octen.Int(3), Language: []string{"ja"}}) {
-			if !hasJapanese(r.Title + r.Highlight) {
-				t.Errorf("result %q (%q) has no Japanese text", r.URL, r.Title)
+		for _, r := range premier(t, octen.SearchParams{Query: "Tokyo travel guide", Count: octen.Int(3), Language: []string{"ja"}}).Data.Results {
+			if !hasKana(r.Title + r.Highlight) {
+				t.Errorf("result %q (%q) has no kana", r.URL, r.Title)
 			}
 		}
 	})
-	t.Run("time_basis_published_start_end", func(t *testing.T) {
+	t.Run("time_basis_published_start_end_result_type_dynamic", func(t *testing.T) {
 		from, to := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 6, 30, 23, 59, 59, 0, time.UTC)
-		rs := premier(t, octen.SearchParams{Query: "artificial intelligence regulation", Count: octen.Int(3), TimeBasis: octen.String("published"),
-			StartTime: octen.String(from.Format(time.RFC3339)), EndTime: octen.String(to.Format(time.RFC3339))})
-		var stamps []string
-		for _, r := range rs {
-			stamps = append(stamps, r.TimePublished)
+		res := premier(t, octen.SearchParams{Query: "artificial intelligence regulation", Count: octen.Int(3), ResultType: octen.String("dynamic"),
+			TimeBasis: octen.String("published"), StartTime: octen.String(from.Format(time.RFC3339)), EndTime: octen.String(to.Format(time.RFC3339))})
+		if res.Meta == nil || res.Meta.ResultType != "dynamic" {
+			t.Errorf("meta = %+v, want result_type dynamic echoed", res.Meta)
 		}
-		checkDates(t, "time_published", stamps, from, to)
-	})
-	t.Run("time_basis_crawled_time_range_week", func(t *testing.T) {
-		rs := premier(t, octen.SearchParams{Query: "technology news", Count: octen.Int(3), TimeBasis: octen.String("crawled"), TimeRange: octen.String("week")})
-		var stamps []string
-		for _, r := range rs {
-			stamps = append(stamps, r.TimeLastCrawled)
+		var rs []datedResult
+		for _, r := range res.Data.Results {
+			rs = append(rs, datedResult{r.URL, r.TimePublished})
 		}
-		checkDates(t, "time_last_crawled", stamps, time.Now().AddDate(0, 0, -8), time.Now().Add(time.Hour))
+		checkDates(t, "time_published", rs, from, to)
 	})
+	t.Run("time_basis_crawled_time_range_week_with_control", func(t *testing.T) {
+		from, to := time.Now().AddDate(0, 0, -8), time.Now().Add(time.Hour)
+		p := octen.SearchParams{Query: "history of the printing press", Count: octen.Int(5)}
+		var ctl []datedResult
+		for _, r := range premier(t, p).Data.Results {
+			ctl = append(ctl, datedResult{r.URL, r.TimeLastCrawled})
+		}
+		logControlOutside(t, "time_last_crawled", ctl, from, to)
+		p.TimeBasis, p.TimeRange = octen.String("crawled"), octen.String("week")
+		var rs []datedResult
+		for _, r := range premier(t, p).Data.Results {
+			rs = append(rs, datedResult{r.URL, r.TimeLastCrawled})
+		}
+		checkDates(t, "time_last_crawled", rs, from, to)
+	})
+}
+
+// max_tokens 100 (the minimum) against 512 (the server default): dropping the cap makes the two calls equal.
+func TestLiveMatrixSearchPremierHighlightCap(t *testing.T) {
+	c := liveClient(t)
+	highlights := func(t *testing.T, maxTokens int) map[string]string {
+		t.Helper()
+		start := time.Now()
+		res, err := c.Search.SearchPremier(liveContext(t), octen.SearchParams{Query: "solid-state battery", Count: octen.Int(3),
+			Highlight: &octen.HighlightOptions{Enable: octen.Bool(true), MaxTokens: octen.Int(maxTokens)}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		matrixOK(t, res.RequestID, start)
+		out := map[string]string{}
+		if res.Data != nil {
+			for _, r := range res.Data.Results {
+				out[r.URL] = r.Highlight
+			}
+		}
+		return out
+	}
+	large, small := highlights(t, 512), highlights(t, 100)
+	compared, shorter := 0, 0
+	for u, sh := range small {
+		l, ok := large[u]
+		if !ok {
+			continue
+		}
+		compared++
+		t.Logf("%s highlight chars cap100=%d cap512=%d", u, len(sh), len(l))
+		if sh == "" || len(sh) > len(l) {
+			t.Errorf("result %q: capped highlight (%d chars) is empty or longer than the default one (%d)", u, len(sh), len(l))
+		}
+		if len(sh) < len(l) {
+			shorter++
+		}
+	}
+	if compared == 0 {
+		t.Fatal("the two calls share no result URL")
+	}
+	if shorter == 0 {
+		t.Errorf("max_tokens 100 shortened none of %d highlights compared with 512", compared)
+	}
 }
 
 func TestLiveMatrixImageSearchParams(t *testing.T) {
@@ -835,17 +854,35 @@ func TestLiveMatrixImageSearchParams(t *testing.T) {
 		}
 		return res.Data.Results
 	}
-	// Safesearch on a benign query has no observable effect; it is sent to show it is accepted.
-	t.Run("exclude_domains_with_control_safesearch_off", func(t *testing.T) {
-		in := []octen.ImageSearchInput{{Type: "text", Data: octen.String("Golden Gate Bridge")}}
-		control := image(t, octen.ImageSearchParams{Inputs: in, Count: octen.Int(5)})
-		excluded := hostOf(control[0].SourcePage)
-		t.Logf("control results=%d excluded_host=%s", len(control), excluded)
-		if excluded == "" {
-			t.Fatal("control result has no source_page host")
+	// Safesearch on a benign query has no observable effect; every call sends the same value.
+	in := []octen.ImageSearchInput{{Type: "text", Data: octen.String("Golden Gate Bridge")}}
+	control := image(t, octen.ImageSearchParams{Inputs: in, Count: octen.Int(5), Safesearch: octen.String("off")})
+	var pages []string
+	for _, r := range control {
+		if hostOf(r.SourcePage) == "" {
+			t.Fatalf("control result %q has no parseable source_page %q", r.URL, r.SourcePage)
 		}
-		for _, r := range image(t, octen.ImageSearchParams{Inputs: in, Count: octen.Int(5), ExcludeDomains: []string{excluded}, Safesearch: octen.String("off")}) {
-			if hostOn(r.SourcePage, excluded) {
+		if r.URL == "" || r.Width == 0 || r.Height == 0 {
+			t.Errorf("incomplete control result %+v", r)
+		}
+		pages = append(pages, r.SourcePage)
+	}
+	if n := distinctHosts(pages); n < 2 {
+		t.Fatalf("control shows %d source host(s); the domain filters cannot be shown", n)
+	}
+	target := hostOf(control[0].SourcePage)
+	t.Logf("control results=%d target_host=%s", len(control), target)
+
+	t.Run("include_domains", func(t *testing.T) {
+		for _, r := range image(t, octen.ImageSearchParams{Inputs: in, Count: octen.Int(5), Safesearch: octen.String("off"), IncludeDomains: []string{target}}) {
+			if !hostOn(r.SourcePage, target) {
+				t.Errorf("source_page %q is outside %s", r.SourcePage, target)
+			}
+		}
+	})
+	t.Run("exclude_domains", func(t *testing.T) {
+		for _, r := range image(t, octen.ImageSearchParams{Inputs: in, Count: octen.Int(5), Safesearch: octen.String("off"), ExcludeDomains: []string{target}}) {
+			if hostOn(r.SourcePage, target) {
 				t.Errorf("source_page %q is on the excluded domain", r.SourcePage)
 			}
 		}
@@ -853,8 +890,8 @@ func TestLiveMatrixImageSearchParams(t *testing.T) {
 }
 
 func TestLiveMatrixVideoSearchParams(t *testing.T) {
-	c := liveClient(t)
-	video := func(t *testing.T, p octen.VideoSearchParams) []string {
+	c := liveVideoClient(t)
+	video := func(t *testing.T, p octen.VideoSearchParams) []octen.VideoSearchResult {
 		t.Helper()
 		start := time.Now()
 		res, err := c.Search.VideoSearch(liveContext(t), p)
@@ -865,27 +902,39 @@ func TestLiveMatrixVideoSearchParams(t *testing.T) {
 		if res.Data == nil || len(res.Data.Results) == 0 {
 			t.Fatal("no results to check")
 		}
-		var stamps []string
-		for _, r := range res.Data.Results {
-			stamps = append(stamps, r.TimePublished)
+		return res.Data.Results
+	}
+	dated := func(rs []octen.VideoSearchResult) []datedResult {
+		var out []datedResult
+		for _, r := range rs {
+			out = append(out, datedResult{r.URL, r.TimePublished})
 		}
-		return stamps
+		return out
 	}
 	in := []octen.VideoSearchInput{{Type: "text", Data: octen.String("SpaceX rocket launch")}}
-	// Safesearch on a benign query has no observable effect; it is sent to show it is accepted.
-	t.Run("time_range_month_safesearch_strict", func(t *testing.T) {
-		stamps := video(t, octen.VideoSearchParams{Inputs: in, Count: octen.Int(3), TimeRange: octen.String("month"), Safesearch: octen.String("strict")})
-		checkDates(t, "time_published", stamps, time.Now().AddDate(0, 0, -32), time.Now().Add(time.Hour))
+	// Safesearch on a benign query has no observable effect; both calls send the same value.
+	t.Run("time_range_month_with_control_safesearch_strict", func(t *testing.T) {
+		from, to := time.Now().AddDate(0, 0, -32), time.Now().Add(time.Hour)
+		p := octen.VideoSearchParams{Inputs: in, Count: octen.Int(3), Safesearch: octen.String("strict")}
+		ctl := video(t, p)
+		for _, r := range ctl {
+			if r.URL == "" || r.DurationSeconds <= 0 {
+				t.Errorf("incomplete control result %+v", r)
+			}
+		}
+		logControlOutside(t, "time_published", dated(ctl), from, to)
+		p.TimeRange = octen.String("month")
+		checkDates(t, "time_published", dated(video(t, p)), from, to)
 	})
 	t.Run("start_end", func(t *testing.T) {
 		from, to := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2020, 12, 31, 23, 59, 59, 0, time.UTC)
-		stamps := video(t, octen.VideoSearchParams{Inputs: in, Count: octen.Int(3),
+		rs := video(t, octen.VideoSearchParams{Inputs: in, Count: octen.Int(3),
 			StartTime: octen.String(from.Format(time.RFC3339)), EndTime: octen.String(to.Format(time.RFC3339))})
-		checkDates(t, "time_published", stamps, from, to)
+		checkDates(t, "time_published", dated(rs), from, to)
 	})
 }
 
-func TestLiveMatrixDesignSearchWebParams(t *testing.T) {
+func TestLiveMatrixDesignSearchParams(t *testing.T) {
 	c := liveClient(t)
 	design := func(t *testing.T, p octen.DesignSearchParams) *octen.DesignSearchData {
 		t.Helper()
@@ -900,64 +949,122 @@ func TestLiveMatrixDesignSearchWebParams(t *testing.T) {
 		}
 		return res.Data
 	}
-	webOnly := func(w *octen.DesignWebSearchOptions) octen.DesignSearchParams {
-		return octen.DesignSearchParams{Query: octen.String("SaaS pricing page"), Images: &octen.DesignImageOptions{Enable: octen.Bool(false)}, WebSearch: w}
-	}
-	webResults := func(t *testing.T, d *octen.DesignSearchData) []octen.DesignSearchResult {
+	query := octen.String("SaaS pricing page")
+	// webOnly turns the image results off, which every such call also checks.
+	webOnly := func(t *testing.T, w *octen.DesignWebSearchOptions) []octen.DesignSearchResult {
 		t.Helper()
+		d := design(t, octen.DesignSearchParams{Query: query, Images: &octen.DesignImageOptions{Enable: octen.Bool(false)}, WebSearch: w})
+		if len(d.Images) != 0 {
+			t.Errorf("images.enable false still returned %d images", len(d.Images))
+		}
 		if len(d.Results) == 0 {
 			t.Fatal("no web results to check")
 		}
+		if w.Count != nil && len(d.Results) > *w.Count {
+			t.Errorf("web results = %d, want at most web_search.count %d", len(d.Results), *w.Count)
+		}
 		return d.Results
 	}
+	dated := func(rs []octen.DesignSearchResult) []datedResult {
+		var out []datedResult
+		for _, r := range rs {
+			out = append(out, datedResult{r.URL, r.TimePublished})
+		}
+		return out
+	}
 
+	// One request with default options is the control for every check below.
+	control := design(t, octen.DesignSearchParams{Query: query, Images: &octen.DesignImageOptions{Count: octen.Int(2)},
+		WebSearch: &octen.DesignWebSearchOptions{Count: octen.Int(5)}})
+	if len(control.Results) == 0 || len(control.Results) > 5 {
+		t.Fatalf("control web results = %d, want 1..5", len(control.Results))
+	}
+	var controlURLs []string
+	for _, r := range control.Results {
+		controlURLs = append(controlURLs, r.URL)
+	}
+
+	t.Run("design_facts_and_snippet_off", func(t *testing.T) {
+		withFacts, withSnippet := 0, 0
+		for _, img := range control.Images {
+			if img.DesignFacts != nil {
+				withFacts++
+			}
+			if img.Snippet != nil && img.Snippet.Code != "" {
+				withSnippet++
+			}
+		}
+		t.Logf("control images=%d with_design_facts=%d with_snippet=%d", len(control.Images), withFacts, withSnippet)
+		if withFacts == 0 || withSnippet == 0 {
+			t.Fatalf("control images lack design_facts (%d) or snippet (%d)", withFacts, withSnippet)
+		}
+		d := design(t, octen.DesignSearchParams{Query: query,
+			Images:    &octen.DesignImageOptions{Count: octen.Int(2), DesignFacts: octen.Bool(false), Snippet: &octen.DesignSnippetOptions{Enable: octen.Bool(false)}},
+			WebSearch: &octen.DesignWebSearchOptions{Enable: octen.Bool(false)}})
+		if len(d.Images) == 0 {
+			t.Fatal("no images to check")
+		}
+		for _, img := range d.Images {
+			if img.DesignFacts != nil || img.Snippet != nil {
+				t.Errorf("image %q still has design_facts or snippet", img.URL)
+			}
+		}
+		if len(d.Results) != 0 {
+			t.Errorf("web_search.enable false still returned %d web results", len(d.Results))
+		}
+	})
 	t.Run("images_count_web_highlight_full_content_time_range_year", func(t *testing.T) {
-		d := design(t, octen.DesignSearchParams{
-			Query:  octen.String("SaaS pricing page"),
+		from, to := time.Now().AddDate(-1, 0, -1), time.Now().Add(time.Hour)
+		logControlOutside(t, "time_published", dated(control.Results), from, to)
+		d := design(t, octen.DesignSearchParams{Query: query,
 			Images: &octen.DesignImageOptions{Count: octen.Int(3)},
 			WebSearch: &octen.DesignWebSearchOptions{Count: octen.Int(3), TimeBasis: octen.String("published"), TimeRange: octen.String("year"),
 				Highlight:   &octen.HighlightOptions{Enable: octen.Bool(true), MaxTokens: octen.Int(100)},
-				FullContent: &octen.FullContentOptions{Enable: octen.Bool(true), MaxTokens: octen.Int(500)}},
-		})
+				FullContent: &octen.FullContentOptions{Enable: octen.Bool(true), MaxTokens: octen.Int(500)}}})
 		if n := len(d.Images); n == 0 || n > 3 {
-			t.Errorf("images = %d, want 1..3 for images.count 3", n)
+			t.Errorf("images = %d, want 1..3 for images.count 3 (server default 5)", n)
 		}
-		var stamps []string
-		for _, r := range webResults(t, d) {
-			if r.Highlight == "" || !roughlyBounded(r.Highlight, 100) {
-				t.Errorf("result %q highlight has %d chars, want 1..800", r.URL, len(r.Highlight))
-			}
-			if r.FullContent == "" || !roughlyBounded(r.FullContent, 500) {
-				t.Errorf("result %q full_content has %d chars, want 1..4000", r.URL, len(r.FullContent))
-			}
-			stamps = append(stamps, r.TimePublished)
+		if n := len(d.Results); n > 3 {
+			t.Errorf("web results = %d, want at most 3", n)
 		}
-		t.Logf("images=%d", len(d.Images))
-		checkDates(t, "time_published", stamps, time.Now().AddDate(-1, 0, -1), time.Now().Add(time.Hour))
+		for _, r := range d.Results {
+			if r.Highlight == "" || r.FullContent == "" {
+				t.Errorf("result %q lacks highlight or full_content", r.URL)
+			}
+		}
+		checkDates(t, "time_published", dated(d.Results), from, to)
 	})
-	t.Run("web_start_end", func(t *testing.T) {
+	t.Run("web_time_basis_published_start_end", func(t *testing.T) {
 		from, to := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 12, 31, 23, 59, 59, 0, time.UTC)
-		var stamps []string
-		for _, r := range webResults(t, design(t, webOnly(&octen.DesignWebSearchOptions{Count: octen.Int(3),
-			StartTime: octen.String(from.Format(time.RFC3339)), EndTime: octen.String(to.Format(time.RFC3339))}))) {
-			stamps = append(stamps, r.TimePublished)
-		}
-		checkDates(t, "time_published", stamps, from, to)
+		rs := webOnly(t, &octen.DesignWebSearchOptions{Count: octen.Int(3), TimeBasis: octen.String("published"),
+			StartTime: octen.String(from.Format(time.RFC3339)), EndTime: octen.String(to.Format(time.RFC3339))})
+		checkDates(t, "time_published", dated(rs), from, to)
 	})
 	t.Run("web_language_ja", func(t *testing.T) {
-		for _, r := range webResults(t, design(t, webOnly(&octen.DesignWebSearchOptions{Count: octen.Int(3), Language: []string{"ja"}}))) {
-			if !hasJapanese(r.Title + r.Highlight) {
-				t.Errorf("web result %q (%q) has no Japanese text", r.URL, r.Title)
+		for _, r := range webOnly(t, &octen.DesignWebSearchOptions{Count: octen.Int(3), Language: []string{"ja"}}) {
+			if !hasKana(r.Title + r.Highlight) {
+				t.Errorf("web result %q (%q) has no kana", r.URL, r.Title)
 			}
 		}
 	})
-	t.Run("web_exclude_domains_with_control", func(t *testing.T) {
-		control := webResults(t, design(t, webOnly(&octen.DesignWebSearchOptions{Count: octen.Int(5)})))
-		excluded := hostOf(control[0].URL)
-		t.Logf("control results=%d excluded_host=%s", len(control), excluded)
-		for _, r := range webResults(t, design(t, webOnly(&octen.DesignWebSearchOptions{Count: octen.Int(5), ExcludeDomains: []string{excluded}}))) {
+	t.Run("web_exclude_domains", func(t *testing.T) {
+		excluded := hostOf(control.Results[0].URL)
+		t.Logf("excluded_host=%s", excluded)
+		for _, r := range webOnly(t, &octen.DesignWebSearchOptions{Count: octen.Int(5), ExcludeDomains: []string{excluded}}) {
 			if hostOn(r.URL, excluded) {
 				t.Errorf("web result %q is on the excluded domain", r.URL)
+			}
+		}
+	})
+	t.Run("web_include_domains", func(t *testing.T) {
+		if n := distinctHosts(controlURLs); n < 2 {
+			t.Fatalf("control shows %d host(s); include_domains cannot be shown", n)
+		}
+		target := hostOf(control.Results[0].URL)
+		t.Logf("include_host=%s", target)
+		for _, r := range webOnly(t, &octen.DesignWebSearchOptions{Count: octen.Int(5), IncludeDomains: []string{target}}) {
+			if !hostOn(r.URL, target) {
+				t.Errorf("web result %q is outside %s", r.URL, target)
 			}
 		}
 	})

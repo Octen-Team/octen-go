@@ -17,6 +17,8 @@ import (
 )
 
 // These tests call the production API and are billed: they run only with OCTEN_LIVE=1 and OCTEN_API_KEY.
+// Video Search is an invite-only beta, so its success cases also need OCTEN_LIVE_VIDEO=1; with it set,
+// any error, including a 403, fails them.
 
 func liveClient(t *testing.T, opts ...octen.Option) *octen.Client {
 	t.Helper()
@@ -27,6 +29,16 @@ func liveClient(t *testing.T, opts ...octen.Option) *octen.Client {
 	c, err := octen.NewClient(append([]octen.Option{octen.WithAPIKey(key)}, opts...)...)
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
+	}
+	return c
+}
+
+// liveVideoClient gates the Video Search success cases behind OCTEN_LIVE_VIDEO=1.
+func liveVideoClient(t *testing.T) *octen.Client {
+	t.Helper()
+	c := liveClient(t)
+	if os.Getenv("OCTEN_LIVE_VIDEO") != "1" {
+		t.Skip("Video Search success cases need OCTEN_LIVE_VIDEO=1 and a key with beta access")
 	}
 	return c
 }
@@ -111,41 +123,6 @@ func TestLivePlaceSearch(t *testing.T) {
 	requireRequestID(t, res.RequestID, res.Data != nil)
 }
 
-func TestLiveSearchPremier(t *testing.T) {
-	c := liveClient(t)
-	res, err := c.Search.SearchPremier(liveContext(t), octen.SearchParams{Query: "Octen search API", Count: octen.Int(2), ResultType: octen.String("dynamic")})
-	if err != nil {
-		t.Fatal(err)
-	}
-	requireRequestID(t, res.RequestID, res.Data != nil)
-	if len(res.Data.Results) == 0 {
-		t.Fatal("no results")
-	}
-	if res.Meta == nil || res.Meta.ResultType != "dynamic" {
-		t.Fatalf("meta = %+v, want result_type dynamic echoed", res.Meta)
-	}
-}
-
-func TestLiveImageSearchByText(t *testing.T) {
-	c := liveClient(t)
-	res, err := c.Search.ImageSearch(liveContext(t), octen.ImageSearchParams{
-		Inputs: []octen.ImageSearchInput{{Type: "text", Data: octen.String("golden retriever puppy")}},
-		Count:  octen.Int(2),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	requireRequestID(t, res.RequestID, res.Data != nil)
-	if n := len(res.Data.Results); n == 0 || n > 2 {
-		t.Fatalf("results = %d, want 1 or 2", n)
-	}
-	for _, r := range res.Data.Results {
-		if r.URL == "" || r.Width == 0 || r.Height == 0 {
-			t.Errorf("incomplete result %+v", r)
-		}
-	}
-}
-
 // Searching by a well-known Commons photo finds that photo again, which a text query for "cat" need not.
 func TestLiveImageSearchByURL(t *testing.T) {
 	c := liveClient(t)
@@ -201,51 +178,6 @@ func TestLiveImageSearchByBase64(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("no result points at the input photo: %+v", res.Data.Results)
-	}
-}
-
-func TestLiveImageSearchIncludeDomains(t *testing.T) {
-	c := liveClient(t)
-	res, err := c.Search.ImageSearch(liveContext(t), octen.ImageSearchParams{
-		Inputs:         []octen.ImageSearchInput{{Type: "text", Data: octen.String("Golden Gate Bridge")}},
-		Count:          octen.Int(3),
-		IncludeDomains: []string{"wikipedia.org"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	requireRequestID(t, res.RequestID, res.Data != nil)
-	if len(res.Data.Results) == 0 {
-		t.Fatal("no results to check")
-	}
-	for _, r := range res.Data.Results {
-		u, err := url.Parse(r.SourcePage)
-		host := ""
-		if err == nil {
-			host = strings.ToLower(u.Hostname())
-		}
-		if host != "wikipedia.org" && !strings.HasSuffix(host, ".wikipedia.org") {
-			t.Errorf("source_page %q is outside wikipedia.org", r.SourcePage)
-		}
-	}
-}
-
-// Video Search is an invite-only beta; the live key has access, so any error fails the test.
-func TestLiveVideoSearch(t *testing.T) {
-	c := liveClient(t)
-	res, err := c.Search.VideoSearch(liveContext(t), octen.VideoSearchParams{
-		Inputs: []octen.VideoSearchInput{{Type: "text", Data: octen.String("how to tie a bowline knot")}},
-		Count:  octen.Int(1),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	requireRequestID(t, res.RequestID, res.Data != nil)
-	if n := len(res.Data.Results); n != 1 {
-		t.Fatalf("results = %d, want 1", n)
-	}
-	if r := res.Data.Results[0]; r.URL == "" || r.DurationSeconds <= 0 {
-		t.Errorf("incomplete result %+v", r)
 	}
 }
 

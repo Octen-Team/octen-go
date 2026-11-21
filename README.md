@@ -395,6 +395,7 @@ To release, tag `vX.Y.Z` on `main` after CI is green; the release workflow rerun
 go vet ./...
 go test -race -count=1 ./...
 OCTEN_LIVE=1 OCTEN_API_KEY=... go test -count=1 -run TestLive ./...   # real, billed calls
+OCTEN_LIVE=1 OCTEN_LIVE_VIDEO=1 OCTEN_API_KEY=... go test -count=1 -run TestLive ./...   # also Video Search (beta access needed)
 go run ./internal/tools/specdrift   # compares the live OpenAPI spec with testdata/openapi.json
 ```
 
