@@ -405,7 +405,8 @@ func TestLiveMatrixDesignSearch(t *testing.T) {
 		}
 	})
 	t.Run("design_facts_and_snippet_off_web_include_domains", func(t *testing.T) {
-		// Control: the same query with defaults returns both fields, so their absence below is the option at work.
+		// Control: the same query with default image options (web results off, they are not checked here)
+		// returns both fields, so their absence below is the option at work.
 		control := design(t, octen.DesignSearchParams{
 			Query:     octen.String("SaaS pricing page"),
 			Images:    &octen.DesignImageOptions{Count: octen.Int(2)},
