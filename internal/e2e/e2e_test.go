@@ -67,12 +67,31 @@ func fakeAPI(t *testing.T) (*httptest.Server, func() []seen) {
 	}
 }
 
-// checkBody rejects a body without the input its path requires: one entry in inputs for image
-// and video search, a query or images.group_id for design search, and a query elsewhere.
+type fakeInput struct {
+	Type string  `json:"type"`
+	URL  *string `json:"url"`
+	Data *string `json:"data"`
+}
+
+// checkInput accepts a text input with data and no url, and, when images are allowed, an image
+// input with exactly one non-empty url or data.
+func checkInput(in fakeInput, images bool) error {
+	nonEmpty := func(s *string) bool { return s != nil && *s != "" }
+	switch {
+	case in.Type == "text" && nonEmpty(in.Data) && in.URL == nil:
+		return nil
+	case in.Type == "image" && images && (in.URL != nil) != (in.Data != nil) && (nonEmpty(in.URL) || nonEmpty(in.Data)):
+		return nil
+	}
+	return errors.New("invalid input")
+}
+
+// checkBody rejects a body without the input its path requires: one valid entry in inputs for
+// image and video search, a query or images.group_id for design search, and a query elsewhere.
 func checkBody(path string, body []byte) error {
 	var b struct {
-		Query  *string           `json:"query"`
-		Inputs []json.RawMessage `json:"inputs"`
+		Query  *string     `json:"query"`
+		Inputs []fakeInput `json:"inputs"`
 		Images *struct {
 			GroupID string `json:"group_id"`
 		} `json:"images"`
@@ -85,6 +104,9 @@ func checkBody(path string, body []byte) error {
 	case "/image-search", "/video-search":
 		if len(b.Inputs) != 1 || b.Query != nil {
 			return errors.New("want exactly one inputs entry and no query")
+		}
+		if err := checkInput(b.Inputs[0], path == "/image-search"); err != nil {
+			return err
 		}
 	case "/design-search":
 		if b.Inputs != nil || (!hasQuery && (b.Images == nil || b.Images.GroupID == "")) {
@@ -231,8 +253,18 @@ func TestFakeAPIChecksBodyShape(t *testing.T) {
 		{"/image-search", `{}`, false},
 		{"/image-search", `{"inputs":[]}`, false},
 		{"/image-search", `{"query":"q"}`, false},
+		{"/image-search", `{"inputs":[{"type":"image","url":"https://example.com/a.jpg"}]}`, true},
+		{"/image-search", `{"inputs":[{"type":"image","data":"aGVsbG8="}]}`, true},
+		{"/image-search", `{"inputs":[{"type":"image","url":"https://example.com/a.jpg","data":"aGVsbG8="}]}`, false},
+		{"/image-search", `{"inputs":[{"type":"image","url":""}]}`, false},
+		{"/image-search", `{"inputs":[{"type":"image"}]}`, false},
+		{"/image-search", `{"inputs":[{"type":"text","data":"q","url":"https://example.com/a.jpg"}]}`, false},
+		{"/image-search", `{"inputs":[{"type":"text","data":""}]}`, false},
+		{"/image-search", `{"inputs":[{"type":"audio","data":"q"}]}`, false},
 		{"/video-search", `{"inputs":[{"type":"text","data":"q"}]}`, true},
 		{"/video-search", `{"inputs":[{"type":"text","data":"a"},{"type":"text","data":"b"}]}`, false},
+		{"/video-search", `{"inputs":[{"type":"image","url":"https://example.com/a.jpg"}]}`, false},
+		{"/video-search", `{"inputs":[{"type":"text","data":""}]}`, false},
 		{"/design-search", `{"query":"q"}`, true},
 		{"/design-search", `{"images":{"group_id":"g"}}`, true},
 		{"/design-search", `{"inputs":[{"type":"text","data":"q"}]}`, false},
