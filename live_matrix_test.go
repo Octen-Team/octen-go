@@ -777,19 +777,6 @@ func TestLiveMatrixSearchPremierParams(t *testing.T) {
 			}
 		}
 	})
-	t.Run("time_basis_published_start_end_result_type_dynamic", func(t *testing.T) {
-		from, to := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 6, 30, 23, 59, 59, 0, time.UTC)
-		res := premier(t, octen.SearchParams{Query: "artificial intelligence regulation", Count: octen.Int(3), ResultType: octen.String("dynamic"),
-			TimeBasis: octen.String("published"), StartTime: octen.String(from.Format(time.RFC3339)), EndTime: octen.String(to.Format(time.RFC3339))})
-		if res.Meta == nil || res.Meta.ResultType != "dynamic" {
-			t.Errorf("meta = %+v, want result_type dynamic echoed", res.Meta)
-		}
-		var rs []datedResult
-		for _, r := range res.Data.Results {
-			rs = append(rs, datedResult{r.URL, r.TimePublished})
-		}
-		checkDates(t, "time_published", rs, from, to, timeBasisRule)
-	})
 	t.Run("time_basis_crawled_time_range_week_with_control", func(t *testing.T) {
 		from, to := time.Now().AddDate(0, 0, -8), time.Now().Add(time.Hour)
 		p := octen.SearchParams{Query: "history of the printing press", Count: octen.Int(5)}
@@ -938,12 +925,6 @@ func TestLiveMatrixVideoSearchParams(t *testing.T) {
 		p.TimeRange = octen.String("month")
 		checkDates(t, "time_published", dated(video(t, p)), from, to, videoTimeRule)
 	})
-	t.Run("start_end", func(t *testing.T) {
-		from, to := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2020, 12, 31, 23, 59, 59, 0, time.UTC)
-		rs := video(t, octen.VideoSearchParams{Inputs: in, Count: octen.Int(3),
-			StartTime: octen.String(from.Format(time.RFC3339)), EndTime: octen.String(to.Format(time.RFC3339))})
-		checkDates(t, "time_published", dated(rs), from, to, videoTimeRule)
-	})
 }
 
 func TestLiveMatrixDesignSearchParams(t *testing.T) {
@@ -1079,12 +1060,6 @@ func TestLiveMatrixDesignSearchParams(t *testing.T) {
 		}
 		checkDates(t, "time_published", dated(d.Results), from, to, timeBasisRule)
 	})
-	t.Run("web_time_basis_published_start_end", func(t *testing.T) {
-		from, to := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 12, 31, 23, 59, 59, 0, time.UTC)
-		rs := webOnly(t, &octen.DesignWebSearchOptions{Count: octen.Int(3), TimeBasis: octen.String("published"),
-			StartTime: octen.String(from.Format(time.RFC3339)), EndTime: octen.String(to.Format(time.RFC3339))})
-		checkDates(t, "time_published", dated(rs), from, to, timeBasisRule)
-	})
 	t.Run("web_language_ja", func(t *testing.T) {
 		for _, r := range webOnly(t, &octen.DesignWebSearchOptions{Count: octen.Int(3), Language: []string{"ja"}}) {
 			if !hasKana(r.Title + r.Highlight) {
@@ -1112,5 +1087,98 @@ func TestLiveMatrixDesignSearchParams(t *testing.T) {
 				t.Errorf("web result %q is outside %s", r.URL, target)
 			}
 		}
+	})
+}
+
+// checkStartEnd shows each bound on its own: with only end_time some result is before start_time,
+// with only start_time some result is after end_time, and with both every result is inside. Dropping
+// either bound from the last request turns it into one of the first two, so the check fails.
+func checkStartEnd(t *testing.T, field, rule string, from, to time.Time, search func(t *testing.T, start, end *string) []datedResult) {
+	t.Helper()
+	start, end := octen.String(from.Format(time.RFC3339)), octen.String(to.Format(time.RFC3339))
+	some := func(rs []datedResult, outside func(time.Time) bool) bool {
+		for _, r := range rs {
+			if ts, err := time.Parse(time.RFC3339, r.stamp); err == nil && outside(ts) {
+				return true
+			}
+		}
+		return false
+	}
+	if !some(search(t, nil, end), func(ts time.Time) bool { return ts.Before(from) }) {
+		t.Fatalf("with only end_time, no result has %s before start_time, so start_time cannot be shown", field)
+	}
+	if !some(search(t, start, nil), func(ts time.Time) bool { return ts.After(to) }) {
+		t.Fatalf("with only start_time, no result has %s after end_time, so end_time cannot be shown", field)
+	}
+	checkDates(t, field, search(t, start, end), from, to, rule)
+}
+
+func TestLiveMatrixSearchPremierStartEnd(t *testing.T) {
+	c := liveClient(t)
+	from, to := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 6, 30, 23, 59, 59, 0, time.UTC)
+	checkStartEnd(t, "time_published", timeBasisRule, from, to, func(t *testing.T, start, end *string) []datedResult {
+		t.Helper()
+		begin := time.Now()
+		res, err := c.Search.SearchPremier(liveContext(t), octen.SearchParams{Query: "artificial intelligence regulation", Count: octen.Int(5),
+			ResultType: octen.String("dynamic"), TimeBasis: octen.String("published"), StartTime: start, EndTime: end})
+		if err != nil {
+			t.Fatal(err)
+		}
+		matrixOK(t, res.RequestID, begin)
+		if res.Meta == nil || res.Meta.ResultType != "dynamic" {
+			t.Errorf("meta = %+v, want result_type dynamic echoed", res.Meta)
+		}
+		var rs []datedResult
+		if res.Data != nil {
+			for _, r := range res.Data.Results {
+				rs = append(rs, datedResult{r.URL, r.TimePublished})
+			}
+		}
+		return rs
+	})
+}
+
+func TestLiveMatrixVideoSearchStartEnd(t *testing.T) {
+	c := liveVideoClient(t)
+	from, to := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2020, 12, 31, 23, 59, 59, 0, time.UTC)
+	checkStartEnd(t, "time_published", videoTimeRule, from, to, func(t *testing.T, start, end *string) []datedResult {
+		t.Helper()
+		begin := time.Now()
+		res, err := c.Search.VideoSearch(liveContext(t), octen.VideoSearchParams{Count: octen.Int(5), StartTime: start, EndTime: end,
+			Inputs: []octen.VideoSearchInput{{Type: "text", Data: octen.String("SpaceX rocket launch")}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		matrixOK(t, res.RequestID, begin)
+		var rs []datedResult
+		if res.Data != nil {
+			for _, r := range res.Data.Results {
+				rs = append(rs, datedResult{r.URL, r.TimePublished})
+			}
+		}
+		return rs
+	})
+}
+
+func TestLiveMatrixDesignSearchStartEnd(t *testing.T) {
+	c := liveClient(t)
+	from, to := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 12, 31, 23, 59, 59, 0, time.UTC)
+	checkStartEnd(t, "time_published", timeBasisRule, from, to, func(t *testing.T, start, end *string) []datedResult {
+		t.Helper()
+		begin := time.Now()
+		res, err := c.Search.DesignSearch(liveContext(t), octen.DesignSearchParams{Query: octen.String("SaaS pricing page"),
+			Images:    &octen.DesignImageOptions{Enable: octen.Bool(false)},
+			WebSearch: &octen.DesignWebSearchOptions{Count: octen.Int(5), TimeBasis: octen.String("published"), StartTime: start, EndTime: end}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		matrixOK(t, res.RequestID, begin)
+		var rs []datedResult
+		if res.Data != nil {
+			for _, r := range res.Data.Results {
+				rs = append(rs, datedResult{r.URL, r.TimePublished})
+			}
+		}
+		return rs
 	})
 }
