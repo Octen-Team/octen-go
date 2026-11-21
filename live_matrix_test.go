@@ -354,13 +354,14 @@ func TestLiveMatrixDesignSearch(t *testing.T) {
 		}
 		var group *octen.DesignImageGroup
 		for _, img := range d.Images {
-			if img.Group != nil && img.Group.Total >= 2 {
+			// Three or more, so a lookup that ignored count 2 would return a third position.
+			if img.Group != nil && img.Group.Total >= 3 {
 				group = img.Group
 				break
 			}
 		}
 		if group == nil {
-			t.Fatalf("none of %d images belongs to a group of two or more", len(d.Images))
+			t.Fatalf("none of %d images belongs to a group of three or more", len(d.Images))
 		}
 		g := design(t, octen.DesignSearchParams{Images: &octen.DesignImageOptions{GroupID: octen.String(group.GroupID), Count: octen.Int(2)}})
 		var positions []int
@@ -581,9 +582,14 @@ func hasKana(s string) bool {
 
 type datedResult struct{ url, stamp string }
 
-// checkDates requires every result to carry the timestamp and to fall in [from, to]: the reference
-// says results missing the time_basis field are excluded when filtering by time.
-func checkDates(t *testing.T, field string, rs []datedResult, from, to time.Time) {
+// Why a result must carry its timestamp under a time filter, for the failure message.
+const (
+	timeBasisRule = "the reference says results missing the time_basis field are excluded when filtering by time"
+	videoTimeRule = "the Video Search reference only says results are filtered by publish time; an undated video is a gap to report"
+)
+
+// checkDates requires every result to carry the timestamp and to fall in [from, to].
+func checkDates(t *testing.T, field string, rs []datedResult, from, to time.Time, rule string) {
 	t.Helper()
 	if len(rs) == 0 {
 		t.Fatal("no results to check")
@@ -591,7 +597,7 @@ func checkDates(t *testing.T, field string, rs []datedResult, from, to time.Time
 	for _, r := range rs {
 		ts, err := time.Parse(time.RFC3339, r.stamp)
 		if err != nil {
-			t.Errorf("result %q has %s %q under a time filter: %v", r.url, field, r.stamp, err)
+			t.Errorf("result %q has %s %q under a time filter (%s): %v", r.url, field, r.stamp, rule, err)
 			continue
 		}
 		if ts.Before(from) || ts.After(to) {
@@ -600,9 +606,9 @@ func checkDates(t *testing.T, field string, rs []datedResult, from, to time.Time
 	}
 }
 
-// logControlOutside reports how many control results fall outside the window; with none, the
-// filtered check below it cannot fail for a filter the server ignores, so it is only a smoke check.
-func logControlOutside(t *testing.T, field string, rs []datedResult, from, to time.Time) {
+// requireControlOutside needs a control result outside the window; without one, the filtered
+// check could not fail for a filter the server ignores.
+func requireControlOutside(t *testing.T, field string, rs []datedResult, from, to time.Time) {
 	t.Helper()
 	outside := 0
 	for _, r := range rs {
@@ -611,8 +617,7 @@ func logControlOutside(t *testing.T, field string, rs []datedResult, from, to ti
 		}
 	}
 	if outside == 0 {
-		t.Logf("SMOKE: no control result has %s outside the window, so this case cannot show the filter at work", field)
-		return
+		t.Fatalf("no control result has %s outside the window, so the filter cannot be shown", field)
 	}
 	t.Logf("control results with %s outside the window: %d of %d", field, outside, len(rs))
 }
@@ -650,9 +655,10 @@ func TestLiveMatrixSearchPremierParams(t *testing.T) {
 	// One unfiltered request is the control for include_text, exclude_text, exclude_domains and include_domains.
 	// Safesearch on a benign query has no observable effect; it is sent on every call so it is not a difference.
 	const word = "colorado"
-	// include_text matches the whole page, so full_content must cover long articles for the check (2000 tokens did not).
-	base := octen.SearchParams{Query: "best hiking trails", Count: octen.Int(5), Safesearch: octen.String("off"),
-		FullContent: &octen.FullContentOptions{Enable: octen.Bool(true), MaxTokens: octen.Int(20000)}}
+	// include_text matches the whole page, so full_content must cover long articles (2000 tokens missed one);
+	// three results keep the four requests that carry it affordable.
+	base := octen.SearchParams{Query: "best hiking trails", Count: octen.Int(3), Safesearch: octen.String("off"),
+		FullContent: &octen.FullContentOptions{Enable: octen.Bool(true), MaxTokens: octen.Int(12000)}}
 	control := premier(t, base).Data.Results
 	var controlURLs []string
 	for _, r := range control {
@@ -720,6 +726,7 @@ func TestLiveMatrixSearchPremierParams(t *testing.T) {
 		p := base
 		p.IncludeDomains = []string{target}
 		p.ResultType = octen.String("standard")
+		p.FullContent = &octen.FullContentOptions{Enable: octen.Bool(true), MaxTokens: octen.Int(200)}
 		res := premier(t, p)
 		if res.Meta == nil || res.Meta.ResultType != "standard" {
 			t.Errorf("meta = %+v, want result_type standard echoed", res.Meta)
@@ -781,7 +788,7 @@ func TestLiveMatrixSearchPremierParams(t *testing.T) {
 		for _, r := range res.Data.Results {
 			rs = append(rs, datedResult{r.URL, r.TimePublished})
 		}
-		checkDates(t, "time_published", rs, from, to)
+		checkDates(t, "time_published", rs, from, to, timeBasisRule)
 	})
 	t.Run("time_basis_crawled_time_range_week_with_control", func(t *testing.T) {
 		from, to := time.Now().AddDate(0, 0, -8), time.Now().Add(time.Hour)
@@ -790,13 +797,13 @@ func TestLiveMatrixSearchPremierParams(t *testing.T) {
 		for _, r := range premier(t, p).Data.Results {
 			ctl = append(ctl, datedResult{r.URL, r.TimeLastCrawled})
 		}
-		logControlOutside(t, "time_last_crawled", ctl, from, to)
+		requireControlOutside(t, "time_last_crawled", ctl, from, to)
 		p.TimeBasis, p.TimeRange = octen.String("crawled"), octen.String("week")
 		var rs []datedResult
 		for _, r := range premier(t, p).Data.Results {
 			rs = append(rs, datedResult{r.URL, r.TimeLastCrawled})
 		}
-		checkDates(t, "time_last_crawled", rs, from, to)
+		checkDates(t, "time_last_crawled", rs, from, to, timeBasisRule)
 	})
 }
 
@@ -927,15 +934,15 @@ func TestLiveMatrixVideoSearchParams(t *testing.T) {
 				t.Errorf("incomplete control result %+v", r)
 			}
 		}
-		logControlOutside(t, "time_published", dated(ctl), from, to)
+		requireControlOutside(t, "time_published", dated(ctl), from, to)
 		p.TimeRange = octen.String("month")
-		checkDates(t, "time_published", dated(video(t, p)), from, to)
+		checkDates(t, "time_published", dated(video(t, p)), from, to, videoTimeRule)
 	})
 	t.Run("start_end", func(t *testing.T) {
 		from, to := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2020, 12, 31, 23, 59, 59, 0, time.UTC)
 		rs := video(t, octen.VideoSearchParams{Inputs: in, Count: octen.Int(3),
 			StartTime: octen.String(from.Format(time.RFC3339)), EndTime: octen.String(to.Format(time.RFC3339))})
-		checkDates(t, "time_published", dated(rs), from, to)
+		checkDates(t, "time_published", dated(rs), from, to, videoTimeRule)
 	})
 }
 
@@ -979,16 +986,53 @@ func TestLiveMatrixDesignSearchParams(t *testing.T) {
 	}
 
 	// One request with default options is the control for every check below.
-	control := design(t, octen.DesignSearchParams{Query: query, Images: &octen.DesignImageOptions{Count: octen.Int(2)},
-		WebSearch: &octen.DesignWebSearchOptions{Count: octen.Int(5)}})
-	if len(control.Results) == 0 || len(control.Results) > 5 {
-		t.Fatalf("control web results = %d, want 1..5", len(control.Results))
+	// Server defaults: 5 images and 5 web results, above the caps of 3 checked below.
+	control := design(t, octen.DesignSearchParams{Query: query})
+	if len(control.Results) == 0 {
+		t.Fatal("control has no web results")
 	}
 	var controlURLs []string
 	for _, r := range control.Results {
 		controlURLs = append(controlURLs, r.URL)
 	}
 
+	// max_tokens 100 against the server defaults (512 highlight, 2048 full content), so dropping a cap makes the calls equal.
+	t.Run("web_highlight_and_full_content_caps", func(t *testing.T) {
+		withCaps := func(highlight, full int) map[string]octen.DesignSearchResult {
+			out := map[string]octen.DesignSearchResult{}
+			for _, r := range webOnly(t, &octen.DesignWebSearchOptions{Count: octen.Int(3),
+				Highlight:   &octen.HighlightOptions{Enable: octen.Bool(true), MaxTokens: octen.Int(highlight)},
+				FullContent: &octen.FullContentOptions{Enable: octen.Bool(true), MaxTokens: octen.Int(full)}}) {
+				out[r.URL] = r
+			}
+			return out
+		}
+		large, small := withCaps(512, 2048), withCaps(100, 100)
+		compared, shorterH, shorterF := 0, 0, 0
+		for u, sr := range small {
+			lr, ok := large[u]
+			if !ok {
+				continue
+			}
+			compared++
+			t.Logf("%s highlight %d/%d full_content %d/%d chars (capped/default)", u, len(sr.Highlight), len(lr.Highlight), len(sr.FullContent), len(lr.FullContent))
+			if sr.Highlight == "" || sr.FullContent == "" || len(sr.Highlight) > len(lr.Highlight) || len(sr.FullContent) > len(lr.FullContent) {
+				t.Errorf("result %q: a capped field is empty or longer than the default one", u)
+			}
+			if len(sr.Highlight) < len(lr.Highlight) {
+				shorterH++
+			}
+			if len(sr.FullContent) < len(lr.FullContent) {
+				shorterF++
+			}
+		}
+		if compared == 0 {
+			t.Fatal("the two calls share no result URL")
+		}
+		if shorterH == 0 || shorterF == 0 {
+			t.Errorf("of %d results, max_tokens 100 shortened %d highlights and %d full contents; want at least one each", compared, shorterH, shorterF)
+		}
+	})
 	t.Run("design_facts_and_snippet_off", func(t *testing.T) {
 		withFacts, withSnippet := 0, 0
 		for _, img := range control.Images {
@@ -1020,30 +1064,26 @@ func TestLiveMatrixDesignSearchParams(t *testing.T) {
 	})
 	t.Run("images_count_web_highlight_full_content_time_range_year", func(t *testing.T) {
 		from, to := time.Now().AddDate(-1, 0, -1), time.Now().Add(time.Hour)
-		logControlOutside(t, "time_published", dated(control.Results), from, to)
+		requireControlOutside(t, "time_published", dated(control.Results), from, to)
+		if len(control.Images) <= 3 || len(control.Results) <= 3 {
+			t.Fatalf("control images = %d, web results = %d; both must exceed the cap of 3", len(control.Images), len(control.Results))
+		}
 		d := design(t, octen.DesignSearchParams{Query: query,
-			Images: &octen.DesignImageOptions{Count: octen.Int(3)},
-			WebSearch: &octen.DesignWebSearchOptions{Count: octen.Int(3), TimeBasis: octen.String("published"), TimeRange: octen.String("year"),
-				Highlight:   &octen.HighlightOptions{Enable: octen.Bool(true), MaxTokens: octen.Int(100)},
-				FullContent: &octen.FullContentOptions{Enable: octen.Bool(true), MaxTokens: octen.Int(500)}}})
+			Images:    &octen.DesignImageOptions{Count: octen.Int(3)},
+			WebSearch: &octen.DesignWebSearchOptions{Count: octen.Int(3), TimeBasis: octen.String("published"), TimeRange: octen.String("year")}})
 		if n := len(d.Images); n == 0 || n > 3 {
-			t.Errorf("images = %d, want 1..3 for images.count 3 (server default 5)", n)
+			t.Errorf("images = %d, want 1..3 for images.count 3", n)
 		}
 		if n := len(d.Results); n > 3 {
 			t.Errorf("web results = %d, want at most 3", n)
 		}
-		for _, r := range d.Results {
-			if r.Highlight == "" || r.FullContent == "" {
-				t.Errorf("result %q lacks highlight or full_content", r.URL)
-			}
-		}
-		checkDates(t, "time_published", dated(d.Results), from, to)
+		checkDates(t, "time_published", dated(d.Results), from, to, timeBasisRule)
 	})
 	t.Run("web_time_basis_published_start_end", func(t *testing.T) {
 		from, to := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 12, 31, 23, 59, 59, 0, time.UTC)
 		rs := webOnly(t, &octen.DesignWebSearchOptions{Count: octen.Int(3), TimeBasis: octen.String("published"),
 			StartTime: octen.String(from.Format(time.RFC3339)), EndTime: octen.String(to.Format(time.RFC3339))})
-		checkDates(t, "time_published", dated(rs), from, to)
+		checkDates(t, "time_published", dated(rs), from, to, timeBasisRule)
 	})
 	t.Run("web_language_ja", func(t *testing.T) {
 		for _, r := range webOnly(t, &octen.DesignWebSearchOptions{Count: octen.Int(3), Language: []string{"ja"}}) {
