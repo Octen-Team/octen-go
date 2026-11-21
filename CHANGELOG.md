@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.0
+
 - `Search.SearchPremier` for Web Search Premier (`POST /search-premier`). It takes `SearchParams` and returns `*SearchResponse`, like `Search`.
 - `Search.ImageSearch` (`POST /image-search`) with `ImageSearchParams`; `Inputs` must hold exactly one text input or one image input, given as a public `URL` or base64 `Data`.
 - `Search.VideoSearch` (`POST /video-search`) with `VideoSearchParams`; `Inputs` must hold exactly one text input. Video Search is an invite-only beta.
