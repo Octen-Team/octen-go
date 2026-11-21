@@ -51,8 +51,24 @@ func TestIdenticalSpecsExitZero(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit %d, stderr: %s", code, errOut)
 	}
-	if !strings.Contains(out, "12 request/response schemas") {
-		t.Errorf("stdout = %q, want the count of 12 compared schemas", out)
+	if !strings.Contains(out, "20 request/response schemas") {
+		t.Errorf("stdout = %q, want the count of 20 compared schemas", out)
+	}
+}
+
+// The four endpoints added after the first release are watched like the original six.
+func TestChangeInAddedEndpointIsDrift(t *testing.T) {
+	for schema, want := range map[string]string{
+		"ImageSearchRequest":  "/image-search request",
+		"VideoSearchResponse": "/video-search response",
+		"DesignImageOptions":  "/design-search request",
+		"DesignImageResult":   "/design-search response",
+		"SearchResponse":      "/search-premier response",
+	} {
+		code, _, errOut := runWith(t, mutated(t, schema), snapshotPath)
+		if code != 1 || !strings.Contains(errOut, want) || !strings.Contains(errOut, "brand_new_field") {
+			t.Errorf("%s: exit %d, want 1 naming %q; stderr: %s", schema, code, want, errOut)
+		}
 	}
 }
 
@@ -86,8 +102,8 @@ func TestUnusableInputExitsTwo(t *testing.T) {
 	}
 }
 
-// Schemas outside the six endpoints change often and must not raise the alarm.
-func TestChangeOutsideTheSixEndpointsIsIgnored(t *testing.T) {
+// Schemas outside the watched endpoints change often and must not raise the alarm.
+func TestChangeOutsideTheWatchedEndpointsIsIgnored(t *testing.T) {
 	if code, _, errOut := runWith(t, mutated(t, "ExtractRequest"), snapshotPath); code != 0 {
 		t.Fatalf("exit %d, want 0; stderr: %s", code, errOut)
 	}

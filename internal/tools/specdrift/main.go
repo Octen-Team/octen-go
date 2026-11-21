@@ -1,4 +1,4 @@
-// Command specdrift compares the six endpoints' schemas in the live OpenAPI spec with
+// Command specdrift compares the SDK endpoints' schemas in the live OpenAPI spec with
 // testdata/openapi.json. Exit codes: 0 no drift, 1 drift, 2 cannot run. It never
 // rewrites the snapshot, which is updated by hand after a drift is reviewed.
 package main
@@ -21,7 +21,10 @@ const (
 	maxSpecBytes    = 64 << 20
 )
 
-var endpoints = []string{"/search", "/broad-search", "/news-search", "/business-search", "/pulse-search", "/place-search"}
+var endpoints = []string{
+	"/search", "/broad-search", "/news-search", "/business-search", "/pulse-search", "/place-search",
+	"/search-premier", "/image-search", "/video-search", "/design-search",
+}
 
 type flatSchema struct {
 	name string

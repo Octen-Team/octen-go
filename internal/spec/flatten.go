@@ -186,6 +186,9 @@ func Flatten(doc *Doc, schemaName string, side Side) (obj *Object, err error) {
 	if s.Kind != KindObject {
 		fail(schemaName, "root schema is not an object")
 	}
+	if s.Object.FreeForm {
+		fail(schemaName, "root schema is a free-form object")
+	}
 	return s.Object, nil
 }
 
@@ -231,6 +234,10 @@ func (c *ctx) merge(node any, where string, stack []string, viaRef string) *merg
 			continue
 		}
 		if unionKeywords[key] && c.side == Response && responseUnions[viaRef] {
+			continue
+		}
+		// An object with "additionalProperties": true and no properties is free-form, like one without either.
+		if key == "additionalProperties" && n[key] == true && n["properties"] == nil {
 			continue
 		}
 		unsupported = append(unsupported, strconv.Quote(key))

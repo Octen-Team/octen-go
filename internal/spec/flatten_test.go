@@ -104,7 +104,8 @@ func TestFlattenResponseRejectsUnlistedUnions(t *testing.T) {
 			"discriminator":{"propertyName":"type","mapping":{"a":"#/components/schemas/A"}}}}}
 	}`)
 	wantErr(t, doc, "X", Response, "oneOf")
-	wantErr(t, parse(t, `{"X":{"type":"object","additionalProperties":true}}`), "X", Response, "additionalProperties")
+	wantErr(t, parse(t, `{"X":{"type":"object","additionalProperties":true}}`), "X", Response, "free-form")
+	wantErr(t, parse(t, `{"X":{"type":"object","additionalProperties":{"type":"string"}}}`), "X", Response, "additionalProperties")
 	wantErr(t, parse(t, `{"X":{"type":"object","properties":{"a":{"anyOf":[]}}}}`), "X", Response, "anyOf")
 }
 
@@ -202,9 +203,28 @@ func TestFlattenResponseFreeFormObject(t *testing.T) {
 	}
 }
 
-func TestSixEndpointSchemasFlatten(t *testing.T) {
+// "additionalProperties": true on an object without properties is the explicit free-form form.
+func TestFlattenAdditionalPropertiesTrueIsFreeForm(t *testing.T) {
+	f := mustFlatten(t, loadSnapshot(t), "DesignSearchResponse", Response)
+	img := f.Properties["data"].Object.Properties["images"].Items.Object
+	for _, s := range []*Schema{img.Properties["design_facts"], img.Properties["group"].Object.Properties["master"]} {
+		if s.Kind != KindObject || !s.Object.FreeForm {
+			t.Errorf("got %+v, want free-form object", s)
+		}
+	}
+	for name, schemas := range map[string]string{
+		"schema-valued":     `{"X":{"type":"object","properties":{"m":{"type":"object","additionalProperties":{"type":"string"}}}}}`,
+		"false":             `{"X":{"type":"object","properties":{"m":{"type":"object","additionalProperties":false}}}}`,
+		"beside properties": `{"X":{"type":"object","properties":{"m":{"type":"object","additionalProperties":true,"properties":{"a":{"type":"string"}}}}}}`,
+	} {
+		t.Run(name, func(t *testing.T) { wantErr(t, parse(t, schemas), "X", Response, "additionalProperties") })
+	}
+	wantErr(t, parse(t, `{"X":{"type":"object","properties":{"m":{"type":"object","additionalProperties":true}}}}`), "X", Request, "free-form")
+}
+
+func TestEndpointSchemasFlatten(t *testing.T) {
 	doc := loadSnapshot(t)
-	for _, name := range []string{"Search", "BroadSearch", "NewsSearch", "BusinessSearch", "PulseSearch", "PlaceSearch"} {
+	for _, name := range []string{"Search", "BroadSearch", "NewsSearch", "BusinessSearch", "PulseSearch", "PlaceSearch", "ImageSearch", "VideoSearch", "DesignSearch"} {
 		if _, err := Flatten(doc, name+"Request", Request); err != nil {
 			t.Errorf("%sRequest: %v", name, err)
 		}
