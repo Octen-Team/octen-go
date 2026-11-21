@@ -237,7 +237,7 @@ func (c *ctx) merge(node any, where string, stack []string, viaRef string) *merg
 			continue
 		}
 		// An object with "additionalProperties": true and no properties is free-form, like one without either.
-		if key == "additionalProperties" && n[key] == true && n["properties"] == nil {
+		if key == "additionalProperties" && n[key] == true && n["type"] == "object" && n["properties"] == nil {
 			continue
 		}
 		unsupported = append(unsupported, strconv.Quote(key))

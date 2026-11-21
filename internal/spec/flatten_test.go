@@ -216,6 +216,8 @@ func TestFlattenAdditionalPropertiesTrueIsFreeForm(t *testing.T) {
 		"schema-valued":     `{"X":{"type":"object","properties":{"m":{"type":"object","additionalProperties":{"type":"string"}}}}}`,
 		"false":             `{"X":{"type":"object","properties":{"m":{"type":"object","additionalProperties":false}}}}`,
 		"beside properties": `{"X":{"type":"object","properties":{"m":{"type":"object","additionalProperties":true,"properties":{"a":{"type":"string"}}}}}}`,
+		"on a string":       `{"X":{"type":"object","properties":{"m":{"type":"string","additionalProperties":true}}}}`,
+		"without a type":    `{"X":{"type":"object","properties":{"m":{"additionalProperties":true}}}}`,
 	} {
 		t.Run(name, func(t *testing.T) { wantErr(t, parse(t, schemas), "X", Response, "additionalProperties") })
 	}
