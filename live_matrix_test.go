@@ -1062,7 +1062,7 @@ func TestLiveMatrixDesignSearchParams(t *testing.T) {
 			t.Errorf("web_search.enable false still returned %d web results", len(d.Results))
 		}
 	})
-	t.Run("images_count_web_highlight_full_content_time_range_year", func(t *testing.T) {
+	t.Run("images_count_web_count_time_range_year", func(t *testing.T) {
 		from, to := time.Now().AddDate(-1, 0, -1), time.Now().Add(time.Hour)
 		requireControlOutside(t, "time_published", dated(control.Results), from, to)
 		if len(control.Images) <= 3 || len(control.Results) <= 3 {
