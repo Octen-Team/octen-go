@@ -238,6 +238,7 @@ func TestFakeAPIChecksBodyShape(t *testing.T) {
 		{"/design-search", `{"inputs":[{"type":"text","data":"q"}]}`, false},
 		{"/design-search", `{"images":{"group_id":""}}`, false},
 		{"/search", `not json`, false},
+		{"/search", `{"query":"q","inputs":[{"type":"text","data":"q"}]}`, false},
 	}
 	for _, c := range cases {
 		if err := checkBody(c.path, []byte(c.body)); (err == nil) != c.ok {
