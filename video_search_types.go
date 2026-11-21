@@ -22,6 +22,9 @@ func (p VideoSearchParams) validate() error {
 	if len(p.Inputs) != 1 {
 		return &ValidationError{Field: "inputs", Message: "inputs must hold exactly one text input."}
 	}
+	if p.Inputs[0].Type != "text" {
+		return &ValidationError{Field: "inputs[0].type", Message: `type must be "text".`}
+	}
 	if isBlank(p.Inputs[0].Data) {
 		return &ValidationError{Field: "inputs[0].data", Message: "a text input needs a non-empty data string."}
 	}

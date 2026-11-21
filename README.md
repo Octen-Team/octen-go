@@ -177,10 +177,11 @@ if err == nil && premier.Meta != nil {
 	fmt.Println(premier.Meta.ResultType, len(premier.Data.Results))
 }
 
-// Image Search: POST /image-search (exactly one input: a text query or an image URL)
+// Image Search: POST /image-search (exactly one input: a text query, or an image as a URL or base64 data)
 images, err := client.Search.ImageSearch(ctx, octen.ImageSearchParams{
 	Inputs: []octen.ImageSearchInput{{Type: "image", URL: octen.String("https://example.com/photo.jpg")}},
-	// or: []octen.ImageSearchInput{{Type: "text", Data: octen.String("golden retriever puppy")}}
+	// or an uploaded image: {Type: "image", Data: octen.String(base64.StdEncoding.EncodeToString(jpegBytes))}
+	// or a text query:      {Type: "text", Data: octen.String("golden retriever puppy")}
 	Count: octen.Int(5),
 })
 if err == nil {
@@ -226,7 +227,7 @@ Web Search Premier takes `SearchParams` and returns `*SearchResponse`, the same 
 
 ### Local validation
 
-Before sending anything the SDK checks that `Query` is not blank (surrounding whitespace does not count) and rejects `NaN` and `±Inf` anywhere in the params, because `encoding/json` cannot encode them; both are reported as a `*ValidationError` with the offending field. Image and Video Search instead need exactly one input in `Inputs`, with non-blank `Data` for a text input or non-blank `URL` for an image input (`Field` is `inputs`, `inputs[0].data` or `inputs[0].url`); Design Search needs a non-blank `Query` or a non-blank `Images.GroupID` (`Field` is `query`). It does not check value ranges or enum values (for example `Count` or `TimeRange`); out-of-range values come back from the server as a 400 and match `ErrBadRequest`.
+Before sending anything the SDK checks that `Query` is not blank (surrounding whitespace does not count) and rejects `NaN` and `±Inf` anywhere in the params, because `encoding/json` cannot encode them; both are reported as a `*ValidationError` with the offending field. Image and Video Search instead need exactly one input in `Inputs` (`Field` is `inputs`) whose `Type` is `text` or `image` for Image Search and `text` for Video Search (`inputs[0].type`); a text input needs non-blank `Data` (`inputs[0].data`), and an image input needs exactly one of a non-blank `URL` or base64 `Data` (`inputs[0]`); Design Search needs a non-blank `Query` or a non-blank `Images.GroupID` (`Field` is `query`). Apart from the input `Type`, it does not check value ranges or enum values (for example `Count` or `TimeRange`); out-of-range values come back from the server as a 400 and match `ErrBadRequest`.
 
 Slices are omitted from the request when they are empty, so an empty slice cannot be sent explicitly.
 

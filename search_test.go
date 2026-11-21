@@ -243,8 +243,20 @@ func TestValidationSendsNothing(t *testing.T) {
 			_, err := c.Search.ImageSearch(ctx, ImageSearchParams{Inputs: []ImageSearchInput{{Type: "text", Data: String(" ")}}})
 			return err
 		}},
-		{"image missing url", "inputs[0].url", func() error {
-			_, err := c.Search.ImageSearch(ctx, ImageSearchParams{Inputs: []ImageSearchInput{{Type: "image", Data: String("cats")}}})
+		{"image without url or data", "inputs[0]", func() error {
+			_, err := c.Search.ImageSearch(ctx, ImageSearchParams{Inputs: []ImageSearchInput{{Type: "image"}}})
+			return err
+		}},
+		{"image url and data", "inputs[0]", func() error {
+			_, err := c.Search.ImageSearch(ctx, ImageSearchParams{Inputs: []ImageSearchInput{{Type: "image", URL: String("https://example.com/a.jpg"), Data: String("aGVsbG8=")}}})
+			return err
+		}},
+		{"image unknown type", "inputs[0].type", func() error {
+			_, err := c.Search.ImageSearch(ctx, ImageSearchParams{Inputs: []ImageSearchInput{{Type: "video", URL: String("https://example.com/a.mp4")}}})
+			return err
+		}},
+		{"video image type", "inputs[0].type", func() error {
+			_, err := c.Search.VideoSearch(ctx, VideoSearchParams{Inputs: []VideoSearchInput{{Type: "image", Data: String("knots")}}})
 			return err
 		}},
 		{"video no inputs", "inputs", func() error { _, err := c.Search.VideoSearch(ctx, VideoSearchParams{}); return err }},
@@ -415,6 +427,11 @@ func TestNewEndpointsSendEveryParameter(t *testing.T) {
 					Inputs: []ImageSearchInput{{Type: "image", URL: String("https://example.com/cat.jpg")}},
 					Count:  Int(4), IncludeDomains: []string{"inc.example"}, ExcludeDomains: []string{"exc.example"}, Safesearch: String("off"),
 				})
+				return err
+			}},
+		{"image by base64 data", "/image-search", `{"inputs":[{"type":"image","data":"aGVsbG8="}]}`,
+			func() error {
+				_, err := c.Search.ImageSearch(ctx, ImageSearchParams{Inputs: []ImageSearchInput{{Type: "image", Data: String("aGVsbG8=")}}})
 				return err
 			}},
 		{"image by text, defaults not sent", "/image-search", `{"inputs":[{"type":"text","data":"cats"}]}`,
