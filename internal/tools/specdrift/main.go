@@ -1,6 +1,7 @@
-// Command specdrift compares the SDK endpoints' schemas in the live OpenAPI spec with
-// testdata/openapi.json. Exit codes: 0 no drift, 1 drift, 2 cannot run. It never
-// rewrites the snapshot, which is updated by hand after a drift is reviewed.
+// Command specdrift compares the SDK endpoints' schemas, and the item bounds of the inputs the
+// SDK checks locally, in the live OpenAPI spec with testdata/openapi.json. Exit codes: 0 no
+// drift, 1 drift, 2 cannot run. It never rewrites the snapshot, which is updated by hand after
+// a drift is reviewed.
 package main
 
 import (
@@ -26,6 +27,13 @@ var endpoints = []string{
 	"/search-premier", "/image-search", "/video-search", "/design-search",
 }
 
+// itemBounds lists the arrays whose item count the SDK enforces locally; Flatten ignores
+// minItems and maxItems, so their bounds are compared separately.
+var itemBounds = []struct{ path, property string }{
+	{"/image-search", "inputs"},
+	{"/video-search", "inputs"},
+}
+
 type flatSchema struct {
 	name string
 	side spec.Side
@@ -47,12 +55,12 @@ func run(getenv func(string) string, stdout, stderr io.Writer) (code int) {
 	url := envOr(getenv, "SPEC_DRIFT_URL", defaultURL)
 	snapshotPath := envOr(getenv, "SPEC_DRIFT_SNAPSHOT", defaultSnapshot)
 
-	snapshot, err := flattenAll(func() ([]byte, error) { return os.ReadFile(snapshotPath) })
+	snapshot, snapBounds, err := flattenAll(func() ([]byte, error) { return os.ReadFile(snapshotPath) })
 	if err != nil {
 		fmt.Fprintf(stderr, "specdrift: cannot read the snapshot (%s): %v\n", snapshotPath, err)
 		return 2
 	}
-	live, err := flattenAll(func() ([]byte, error) { return fetch(url) })
+	live, liveBounds, err := flattenAll(func() ([]byte, error) { return fetch(url) })
 	if err != nil {
 		fmt.Fprintf(stderr, "specdrift: cannot read the live spec (%s): %v\n", url, err)
 		return 2
@@ -62,6 +70,12 @@ func run(getenv func(string) string, stdout, stderr io.Writer) (code int) {
 	for i, snap := range snapshot {
 		for _, d := range compare(snap, live[i]) {
 			diffs = append(diffs, fmt.Sprintf("%s %s%s", snap.name, snap.side, d))
+		}
+	}
+	for i, b := range itemBounds {
+		if snapBounds[i] != liveBounds[i] {
+			diffs = append(diffs, fmt.Sprintf("%s request.%s: item bounds changed (snapshot %s, live %s); the SDK checks them locally",
+				b.path, b.property, snapBounds[i], liveBounds[i]))
 		}
 	}
 	if len(diffs) == 0 {
@@ -108,20 +122,20 @@ func fetch(url string) ([]byte, error) {
 }
 
 // flattenAll resolves the schema names from each endpoint, so a renamed schema is still followed.
-func flattenAll(load func() ([]byte, error)) ([]flatSchema, error) {
+func flattenAll(load func() ([]byte, error)) ([]flatSchema, []string, error) {
 	data, err := load()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	doc, err := spec.Parse(data)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var out []flatSchema
 	for _, path := range endpoints {
 		req, res, err := doc.PostRefs(path)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		for _, s := range []struct {
 			name string
@@ -129,12 +143,24 @@ func flattenAll(load func() ([]byte, error)) ([]flatSchema, error) {
 		}{{req, spec.Request}, {res, spec.Response}} {
 			obj, err := spec.Flatten(doc, s.name, s.side)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			out = append(out, flatSchema{path, s.side, obj})
 		}
 	}
-	return out, nil
+	var bounds []string
+	for _, b := range itemBounds {
+		req, _, err := doc.PostRefs(b.path)
+		if err != nil {
+			return nil, nil, err
+		}
+		s, err := doc.ItemBounds(req, b.property)
+		if err != nil {
+			return nil, nil, err
+		}
+		bounds = append(bounds, s)
+	}
+	return out, bounds, nil
 }
 
 // compare reports how live differs from snapshot. Diff is not symmetric (it only flags a

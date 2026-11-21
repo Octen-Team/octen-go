@@ -261,3 +261,18 @@ func contains(xs []string, s string) bool {
 	}
 	return false
 }
+
+func TestItemBounds(t *testing.T) {
+	doc := loadSnapshot(t)
+	for schema, want := range map[string]string{
+		"ImageSearchRequest": "minItems=1 maxItems=1",
+		"VideoSearchRequest": "minItems=unset maxItems=1",
+	} {
+		if got, err := doc.ItemBounds(schema, "inputs"); err != nil || got != want {
+			t.Errorf("ItemBounds(%s.inputs) = %q, %v; want %q", schema, got, err, want)
+		}
+	}
+	if _, err := doc.ItemBounds("ImageSearchRequest", "count"); err == nil {
+		t.Error("ItemBounds on a non-array property succeeded")
+	}
+}

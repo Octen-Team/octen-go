@@ -140,6 +140,21 @@ func (d *Doc) PropertyRef(schema, property string) (string, error) {
 	return name, nil
 }
 
+// ItemBounds describes the minItems and maxItems of an array property declared directly on schema.
+func (d *Doc) ItemBounds(schema, property string) (string, error) {
+	p, ok := dig(d.schemas, schema, "properties", property).(map[string]any)
+	if !ok || p["type"] != "array" {
+		return "", fmt.Errorf("spec: %s.%s is not a directly declared array", schema, property)
+	}
+	bound := func(k string) string {
+		if v, ok := p[k]; ok {
+			return fmt.Sprint(v)
+		}
+		return "unset"
+	}
+	return "minItems=" + bound("minItems") + " maxItems=" + bound("maxItems"), nil
+}
+
 func dig(v any, keys ...string) any {
 	for _, k := range keys {
 		m, ok := v.(map[string]any)

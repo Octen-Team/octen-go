@@ -188,3 +188,24 @@ func TestHTTPFetch(t *testing.T) {
 		t.Errorf("identical snapshot over HTTP: exit %d, want 0; stderr: %s", code, errOut)
 	}
 }
+
+// The SDK enforces a single entry in inputs locally, so a change of its item bounds must be drift
+// although the field comparison ignores minItems and maxItems.
+func TestInputsItemCountChangeIsDrift(t *testing.T) {
+	cases := []struct {
+		schema, want string
+		change       func(inputs map[string]any)
+	}{
+		{"ImageSearchRequest", "/image-search request.inputs", func(in map[string]any) { in["maxItems"] = 2.0 }},
+		{"ImageSearchRequest", "/image-search request.inputs", func(in map[string]any) { delete(in, "minItems") }},
+		{"VideoSearchRequest", "/video-search request.inputs", func(in map[string]any) { delete(in, "maxItems") }},
+		{"VideoSearchRequest", "/video-search request.inputs", func(in map[string]any) { in["minItems"] = 1.0 }},
+	}
+	for _, c := range cases {
+		live := edited(t, c.schema, func(props map[string]any) { c.change(props["inputs"].(map[string]any)) })
+		code, _, errOut := runWith(t, live, snapshotPath)
+		if code != 1 || !strings.Contains(errOut, c.want) || !strings.Contains(errOut, "maxItems") {
+			t.Errorf("%s: exit %d, want 1 naming %q with the item bounds; stderr: %s", c.schema, code, c.want, errOut)
+		}
+	}
+}
