@@ -703,15 +703,29 @@ func TestLiveMatrixSearchPremierParams(t *testing.T) {
 	}
 
 	// Safesearch on a benign query has no observable effect; it is sent to show it is accepted.
-	t.Run("include_text_highlight_max_tokens_safesearch_off", func(t *testing.T) {
-		rs := premier(t, octen.SearchParams{
-			Query: "solid-state battery", Count: octen.Int(3), IncludeText: []string{"electrolyte"},
+	t.Run("include_text_with_control_highlight_max_tokens_safesearch_off", func(t *testing.T) {
+		const phrase = "colorado"
+		base := octen.SearchParams{
+			Query: "best hiking trails", Count: octen.Int(3),
 			Highlight:   &octen.HighlightOptions{Enable: octen.Bool(true), MaxTokens: octen.Int(100)},
 			FullContent: &octen.FullContentOptions{Enable: octen.Bool(true), MaxTokens: octen.Int(4000)},
 			Safesearch:  octen.String("off"),
-		})
-		for _, r := range rs {
-			if !strings.Contains(resultText(r), "electrolyte") {
+		}
+		// Control: without the filter at least one result lacks the phrase, so its presence below is the filter at work.
+		lacking := 0
+		for _, r := range premier(t, base) {
+			if !strings.Contains(resultText(r), phrase) {
+				lacking++
+			}
+		}
+		t.Logf("control results lacking %q: %d", phrase, lacking)
+		if lacking == 0 {
+			t.Fatalf("every control result already contains %q; include_text cannot be shown", phrase)
+		}
+		filtered := base
+		filtered.IncludeText = []string{"Colorado"}
+		for _, r := range premier(t, filtered) {
+			if !strings.Contains(resultText(r), phrase) {
 				t.Errorf("result %q does not contain the include_text phrase", r.URL)
 			}
 			if r.Highlight == "" || !roughlyBounded(r.Highlight, 100) {
