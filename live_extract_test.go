@@ -266,22 +266,27 @@ func TestLiveExtract(t *testing.T) {
 	// Ranges outside urls are the server's to check; a URL that cannot resolve keeps them unbilled even if accepted.
 	t.Run("server_side_bounds_are_400", func(t *testing.T) {
 		broken := func(p octen.ExtractParams) octen.ExtractParams { p.URLs = []string{extractBroken}; return p }
+		// field is the name the observed message ("Invalid params. ... <field> ...") carries.
 		for _, tc := range []struct {
-			name string
-			p    octen.ExtractParams
+			name, field string
+			p           octen.ExtractParams
 		}{
-			{"include_links.max_links 0", broken(octen.ExtractParams{IncludeLinks: &octen.ExtractLinksOptions{MaxLinks: octen.Int(0)}})},
-			{"include_links.max_links 1001", broken(octen.ExtractParams{IncludeLinks: &octen.ExtractLinksOptions{MaxLinks: octen.Int(1001)}})},
-			{"a query of 501 characters", broken(octen.ExtractParams{Query: octen.String(strings.Repeat("q", 501))})},
-			{"unknown mode", broken(octen.ExtractParams{Mode: octen.String("fastest")})},
-			{"unknown format", broken(octen.ExtractParams{Format: octen.String("html")})},
-			{"unknown include_links.scope", broken(octen.ExtractParams{IncludeLinks: &octen.ExtractLinksOptions{Scope: octen.String("prefer_none")}})},
+			{"include_links.max_links 0", "include_links.max_links", broken(octen.ExtractParams{IncludeLinks: &octen.ExtractLinksOptions{MaxLinks: octen.Int(0)}})},
+			{"include_links.max_links 1001", "include_links.max_links", broken(octen.ExtractParams{IncludeLinks: &octen.ExtractLinksOptions{MaxLinks: octen.Int(1001)}})},
+			{"a query of 501 characters", "query", broken(octen.ExtractParams{Query: octen.String(strings.Repeat("q", 501))})},
+			{"unknown mode", "mode", broken(octen.ExtractParams{Mode: octen.String("fastest")})},
+			{"unknown format", "format", broken(octen.ExtractParams{Format: octen.String("html")})},
+			{"unknown include_links.scope", "include_links.scope", broken(octen.ExtractParams{IncludeLinks: &octen.ExtractLinksOptions{Scope: octen.String("prefer_none")}})},
 		} {
 			_, err := c.Extract.Extract(liveContext(t), tc.p)
 			t.Logf("%s: %v", tc.name, err)
 			var apiErr *octen.APIError
 			if !errors.Is(err, octen.ErrBadRequest) || !errors.As(err, &apiErr) || apiErr.StatusCode != 400 {
 				t.Errorf("%s: err %v, want a structured 400 *APIError", tc.name, err)
+				continue
+			}
+			if !strings.Contains(apiErr.Message, tc.field) {
+				t.Errorf("%s: message %q does not name %s", tc.name, apiErr.Message, tc.field)
 			}
 		}
 	})

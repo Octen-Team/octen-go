@@ -379,7 +379,7 @@ Check for `*TimeoutError` with `errors.As` before anything else. `errors.Is(err,
 1. An edge gateway or load balancer returns 408, 502, 503 or 504 after the backend already succeeded; the retry then runs and is billed again.
 2. The server records the billing event but fails while writing the response (for example the connection is recycled mid-response). You see a network error, the SDK does not retry it, but the call was billed.
 
-Extract follows the same policy and is billed per successful URL. With the default of 3 retries a call is sent up to 4 times, and every retry follows a response the server already sent (408, 429, 500, 502, 503 or 504). So in the first case above, the URLs that succeeded can be billed once per attempt: up to 4 times, which for a batch of 20 URLs at the `advanced` rate is up to 80 advanced URL charges. `octen.WithMaxRetries(0)` sends each call once.
+Extract follows the same policy and is billed per successful URL. With the default of 3 retries a call is sent up to 4 times. Every retry that can bill follows a response the server already sent (408, 429, 500, 502, 503 or 504); dial and DNS failures are retried too, but those requests never reached the server and are not billed. So in the first case above, the URLs that succeeded can be billed once per attempt: up to 4 times, which for a batch of 20 URLs at the `advanced` rate is up to 80 advanced URL charges. `octen.WithMaxRetries(0)` sends each call once.
 
 For billing-sensitive jobs, use `octen.WithMaxRetries(0)` and handle retries yourself. Server-side idempotency keys are the proper fix and are not available yet.
 
