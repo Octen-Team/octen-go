@@ -88,6 +88,18 @@ func main() {
 	}
 	fmt.Println("OK design-search", design.RequestID)
 
+	extract, err := client.Extract.Extract(ctx, octen.ExtractParams{
+		URLs:         []string{"https://example.com/a", "https://broken.invalid/"},
+		IncludeLinks: &octen.ExtractLinksOptions{},
+	})
+	if err != nil || extract.RequestID != "rid-extract" || extract.Data == nil || len(extract.Data.Results) != 2 ||
+		extract.Data.Results[0].PageStructure != nil || len(extract.Data.Results[0].Links) != 1 ||
+		extract.Data.Results[1].ErrorMessage != "failed" || extract.Meta == nil || extract.Meta.Usage == nil ||
+		extract.Meta.Usage.SuccessfulByMode == nil || extract.Meta.Usage.SuccessfulByMode.StandardURLs != 1 {
+		fail("Extract: %+v %v", extract, err)
+	}
+	fmt.Println("OK extract", extract.RequestID)
+
 	// The server answers query "bad" with a structured 400.
 	_, err = client.Search.Search(ctx, octen.SearchParams{Query: "bad"})
 	var apiErr *octen.APIError
@@ -104,6 +116,12 @@ func main() {
 	var verr *octen.ValidationError
 	if !errors.As(err, &verr) || verr.Field != "query" {
 		fail("validation: %T %v", err, err)
+	}
+	fmt.Println("OK validation", verr.Field)
+
+	_, err = client.Extract.Extract(ctx, octen.ExtractParams{URLs: []string{"https://example.com/a", " "}})
+	if !errors.As(err, &verr) || verr.Field != "urls[1]" {
+		fail("extract validation: %T %v", err, err)
 	}
 	fmt.Println("OK validation", verr.Field)
 }

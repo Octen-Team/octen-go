@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.3.0
+
+- `Extract.Extract` (`POST /extract`) with `ExtractParams` and `*ExtractResponse`, checked against the public OpenAPI spec. Results are per URL (`Status`, `ErrorMessage`, `ResolvedMode`), and `Meta.Usage.SuccessfulByMode` gives what the call is billed for. `IncludeLinks: &octen.ExtractLinksOptions{}` is sent as `{}` and uses the server defaults.
+- Local checks for Extract, reported as `*ValidationError` before anything is sent: `URLs` must hold 1 to 20 URLs, each non-blank and at most 2048 characters (Unicode code points). Other ranges are left to the server, as for the other endpoints.
+- Extract's default timeout is its per-URL `Timeout` (clamped to 1 to 60 s, default 30) plus 90 s, so 120 s by default; `WithRequestTimeout` or an explicit `WithTimeout` takes precedence, as for `BroadSearch`, and a shorter context deadline still wins. Retries follow the existing policy; the README states what a retry can cost on a per-URL billed call.
+- The contract test and the spec-drift check cover Extract; spec-drift also compares the `urls` limits (item bounds, item lengths and the description that states them) and the per-URL `timeout` default and range, which the SDK's checks and default timeout rely on.
+
 ## 0.2.0
 
 - `Search.SearchPremier` for Web Search Premier (`POST /search-premier`). It takes `SearchParams` and returns `*SearchResponse`, like `Search`.

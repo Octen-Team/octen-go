@@ -25,6 +25,8 @@ type Client struct {
 	Search *SearchService
 	// PlaceSearch serves the place search endpoint.
 	PlaceSearch *PlaceSearchService
+	// Extract serves the Extract endpoint, which returns the content of 1 to 20 URLs per call.
+	Extract *ExtractService
 }
 
 // NewClient builds a client from the options. Invalid configuration, or a missing API key,
@@ -54,7 +56,7 @@ func NewClient(opts ...Option) (*Client, error) {
 		transport: newTransport(cfg.baseURL, key, cfg.headers, cfg.httpClient, cfg.maxRetries),
 		timeout:   cfg.timeout,
 	}
-	return &Client{Search: &SearchService{c: c}, PlaceSearch: &PlaceSearchService{c: c}}, nil
+	return &Client{Search: &SearchService{c: c}, PlaceSearch: &PlaceSearchService{c: c}, Extract: &ExtractService{c: c}}, nil
 }
 
 // core is what the services share: the transport and the client timeout, 0 when not set.

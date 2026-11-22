@@ -200,6 +200,37 @@ func ExampleSearchService_DesignSearch() {
 	// Output: slide 19 28
 }
 
+func ExampleExtractService_Extract() {
+	srv := fakeAPI(200, `{"code":0,"request_id":"req-e","data":{"results":[`+
+		`{"url":"https://example.com/","status":"success","resolved_mode":"standard","title":"Example","full_content":"# Example"},`+
+		`{"url":"https://broken.invalid/","status":"failed","error_message":"Failed to fetch the URL"}]},`+
+		`"meta":{"usage":{"total_urls":2,"successful_urls":1,"successful_by_mode":{"standard_urls":1,"advanced_urls":0}}}}`)
+	defer srv.Close()
+	client := newExampleClient(srv)
+
+	resp, err := client.Extract.Extract(context.Background(), octen.ExtractParams{
+		URLs:         []string{"https://example.com/", "https://broken.invalid/"},
+		Format:       octen.String("markdown"),
+		IncludeLinks: &octen.ExtractLinksOptions{}, // {}: links with the server defaults
+	})
+	if err != nil {
+		panic(err)
+	}
+	// Each URL gets its own status; match results to your input by URL.
+	for _, r := range resp.Data.Results {
+		if r.Status == "success" {
+			fmt.Println(r.URL, r.ResolvedMode, *r.Title)
+		} else {
+			fmt.Println(r.URL, "failed:", r.ErrorMessage)
+		}
+	}
+	fmt.Println("billed standard URLs:", resp.Meta.Usage.SuccessfulByMode.StandardURLs)
+	// Output:
+	// https://example.com/ standard Example
+	// https://broken.invalid/ failed: Failed to fetch the URL
+	// billed standard URLs: 1
+}
+
 func Example_errorHandling() {
 	srv := fakeAPI(401, `{"msg":"invalid api key","request_id":"req-7"}`)
 	defer srv.Close()

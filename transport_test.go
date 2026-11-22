@@ -618,7 +618,7 @@ func TestRequestHeaders(t *testing.T) {
 	}
 	want := map[string]string{
 		"X-Api-Key":    "test-key",
-		"User-Agent":   "octen-go-sdk/0.2.0",
+		"User-Agent":   "octen-go-sdk/" + Version,
 		"Content-Type": "application/json",
 		"Accept":       "application/json",
 		"X-Client":     "c",

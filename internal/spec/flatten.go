@@ -155,6 +155,41 @@ func (d *Doc) ItemBounds(schema, property string) (string, error) {
 	return "minItems=" + bound("minItems") + " maxItems=" + bound("maxItems"), nil
 }
 
+// PropertyKeywords describes the listed keywords of a property declared directly on schema, or of
+// its items when items is true, as "key=value" pairs with "unset" for an absent keyword.
+func (d *Doc) PropertyKeywords(schema, property string, items bool, keys ...string) (string, error) {
+	p, ok := dig(d.schemas, schema, "properties", property).(map[string]any)
+	if !ok {
+		return "", fmt.Errorf("spec: %s.%s is not a directly declared property", schema, property)
+	}
+	if items {
+		if p, ok = p["items"].(map[string]any); !ok {
+			return "", fmt.Errorf("spec: %s.%s has no inline items", schema, property)
+		}
+	}
+	parts := make([]string, len(keys))
+	for i, k := range keys {
+		v, ok := p[k]
+		if !ok {
+			v = "unset"
+		}
+		parts[i] = k + "=" + fmt.Sprint(v)
+	}
+	return strings.Join(parts, " "), nil
+}
+
+// PropertyDescription returns the description of a property declared directly on schema, "unset" when it has none.
+func (d *Doc) PropertyDescription(schema, property string) (string, error) {
+	p, ok := dig(d.schemas, schema, "properties", property).(map[string]any)
+	if !ok {
+		return "", fmt.Errorf("spec: %s.%s is not a directly declared property", schema, property)
+	}
+	if s, ok := p["description"].(string); ok {
+		return s, nil
+	}
+	return "unset", nil
+}
+
 func dig(v any, keys ...string) any {
 	for _, k := range keys {
 		m, ok := v.(map[string]any)

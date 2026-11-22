@@ -1,8 +1,8 @@
 # octen-go
 
-Official Go SDK for the [Octen](https://docs.octen.ai) search API. It has no dependencies outside the standard library and needs Go 1.22 or newer.
+Official Go SDK for the [Octen](https://docs.octen.ai) search and extract API. It has no dependencies outside the standard library and needs Go 1.22 or newer.
 
-It covers ten endpoints: Web Search, Web Search Premier, Broad Search, News Search, Business Search, Pulse Search, Place Search, Image Search, Video Search (invite-only beta) and Design Search.
+It covers eleven endpoints: Web Search, Web Search Premier, Broad Search, News Search, Business Search, Pulse Search, Place Search, Image Search, Video Search (invite-only beta), Design Search and Extract.
 
 - [Install](#install)
 - [Quick start](#quick-start)
@@ -19,7 +19,7 @@ It covers ten endpoints: Web Search, Web Search Premier, Broad Search, News Sear
 ## Install
 
 ```bash
-go get github.com/Octen-Team/octen-go@v0.2.0
+go get github.com/Octen-Team/octen-go@v0.3.0
 ```
 
 Create an API key in your Octen account and either pass it with `octen.WithAPIKey` or set the `OCTEN_API_KEY` environment variable. Surrounding whitespace is trimmed from the key.
@@ -60,13 +60,13 @@ func main() {
 
 Always create a client with `NewClient`; the zero value of `Client` is not usable. A client is safe for concurrent use, so share one for the life of the program.
 
-Field names follow the [API reference](https://docs.octen.ai) exactly, in Go style: `include_domains` is `IncludeDomains`, `request_id` is `RequestID`, `url` is `URL`. Required fields are plain values: `Query`, and for Image and Video Search the `Inputs` slice and each input's `Type`. Every other request scalar is a pointer (including the optional `Query` of Design Search), so "not set" and "zero" stay distinct (a latitude of `0` is a real value); the helpers `octen.Int`, `octen.String`, `octen.Bool`, `octen.Float64` and the generic `octen.Ptr` build those pointers. Nested option objects are pointers to structs, and lists are slices.
+Field names follow the [API reference](https://docs.octen.ai) exactly, in Go style: `include_domains` is `IncludeDomains`, `request_id` is `RequestID`, `url` is `URL`. Required fields are plain values: `Query`, for Image and Video Search the `Inputs` slice and each input's `Type`, and for Extract the `URLs` slice. Every other request scalar is a pointer (including the optional `Query` of Design Search), so "not set" and "zero" stay distinct (a latitude of `0` is a real value); the helpers `octen.Int`, `octen.String`, `octen.Bool`, `octen.Float64` and the generic `octen.Ptr` build those pointers. Nested option objects are pointers to structs, and lists are slices.
 
 Responses are the whole JSON envelope: `Code`, `Msg`, `RequestID`, `Data` and `Meta`. `RequestID` is the body's `request_id`, or an empty string when the body has none; `Data` and `Meta` are pointers that are `nil` when the server did not send them. `resp.RawJSON()` returns the body exactly as received, including fields this version does not model.
 
 ## Methods
 
-Every method takes a `context.Context`, the request struct, and optional [request options](#request-options). `Query` is required, except that Image and Video Search take exactly one entry in `Inputs` instead, and Design Search may leave it out when `Images.GroupID` is set.
+Every method takes a `context.Context`, the request struct, and optional [request options](#request-options). `Query` is required, except that Image and Video Search take exactly one entry in `Inputs` instead, Design Search may leave it out when `Images.GroupID` is set, and Extract takes `URLs`.
 
 The snippets below check `err` and `Data != nil` inline to stay short; `Data` and `Meta` are pointers that are `nil` when the server did not send them.
 
@@ -219,15 +219,43 @@ if err == nil && design.Data != nil {
 		}
 	}
 }
+
+// Extract: POST /extract (clean page content for 1 to 20 URLs per call; note: client.Extract)
+pages, err := client.Extract.Extract(ctx, octen.ExtractParams{
+	URLs:          []string{"https://octen.ai/", "https://docs.octen.ai/api-reference/search"},
+	Format:        octen.String("markdown"), // or "text"
+	IncludeImages: octen.Bool(true),
+	IncludeLinks:  &octen.ExtractLinksOptions{MaxLinks: octen.Int(20)}, // &octen.ExtractLinksOptions{} uses the server defaults
+})
+if err == nil && pages.Data != nil {
+	for _, item := range pages.Data.Results { // match items to your input by URL
+		switch {
+		case item.Status == "failed":
+			fmt.Println(item.URL, "failed:", item.ErrorMessage) // not billed
+		case item.Status != "success":
+			fmt.Println(item.URL, "unknown status:", item.Status)
+		case item.FullContent != nil:
+			fmt.Println(item.URL, item.ResolvedMode, len(*item.FullContent), "bytes of content")
+		default: // with Query set, Highlights replace FullContent
+			fmt.Println(item.URL, item.ResolvedMode, len(item.Highlights), "highlights")
+		}
+	}
+	if pages.Meta != nil && pages.Meta.Usage != nil && pages.Meta.Usage.SuccessfulByMode != nil {
+		by := pages.Meta.Usage.SuccessfulByMode // what the call is billed for
+		fmt.Println(by.StandardURLs, by.AdvancedURLs)
+	}
+}
 ```
 
 Web Search Premier takes `SearchParams` and returns `*SearchResponse`, the same types as Web Search, so code written for one works with the other. Video Search is an invite-only beta; with a key that has no access the server refuses the call. In Design Search, `DesignFacts` and `Group.Master` are free-form maps decided by the server; set `Images.DesignFacts` or `Images.Snippet.Enable` to `false` to leave them out, and `Images.Enable` or `WebSearch.Enable` to `false` to skip a result list.
+
+Extract notes: each URL gets its own result with a `Status`, so a call can succeed while some URLs fail (`Status` is `"failed"` with an `ErrorMessage`); failed URLs are not billed. Match results to your input by `URL` rather than by position. With `Query`, each result carries `Highlights` instead of `FullContent`. `Mode` is `standard` (the default), `advanced` (slower, more expensive, for pages that are hard to reach) or `auto` (picks one per URL); each result's `ResolvedMode` is the mode that URL is billed at, and `Meta.Usage.SuccessfulByMode` counts them. The body's `Timeout` (1 to 60 s, default 30) bounds each URL on the server; it is not the SDK's HTTP timeout, which Extract derives from it (see [Client options](#client-options)). `IncludeLinks` set to `&octen.ExtractLinksOptions{}` is sent as `{}` and returns links with the server defaults; `nil` leaves links out. `PageStructure`, `Category`, `Title`, `FullContent`, `TimePublished`, `Favicon` and `CoverImage` are pointers that are `nil` when the server sends `null` or leaves them out.
 
 `BusinessEntity` is a union of `Company` and `Person`, selected by the entity's `type`. For a `type` this version does not know, or a missing one, only `Type` and `Raw` are filled, so a new entity type never breaks decoding: always keep a `default` branch. `Raw` holds the entity's original JSON, and `json.Marshal` writes it back unchanged, so a decoded response can be stored and decoded again. An entity built by hand without `Raw` marshals as its `Company` or `Person`.
 
 ### Local validation
 
-Before sending anything the SDK checks that `Query` is not blank (surrounding whitespace does not count) and rejects `NaN` and `±Inf` anywhere in the params, because `encoding/json` cannot encode them; both are reported as a `*ValidationError` with the offending field. Image and Video Search instead need exactly one input in `Inputs` (`Field` is `inputs`) whose `Type` is `text` or `image` for Image Search and `text` for Video Search (`inputs[0].type`); a text input needs non-blank `Data` (`inputs[0].data`) and no `URL` (`inputs[0].url`), and an image input needs exactly one of a non-blank `URL` or base64 `Data` (`inputs[0]`); Design Search needs a non-blank `Query` or a non-blank `Images.GroupID` (`Field` is `query`). Apart from the input `Type`, it does not check value ranges or enum values (for example `Count` or `TimeRange`); out-of-range values come back from the server as a 400 and match `ErrBadRequest`.
+Before sending anything the SDK checks that `Query` is not blank (surrounding whitespace does not count) and rejects `NaN` and `±Inf` anywhere in the params, because `encoding/json` cannot encode them; both are reported as a `*ValidationError` with the offending field. Image and Video Search instead need exactly one input in `Inputs` (`Field` is `inputs`) whose `Type` is `text` or `image` for Image Search and `text` for Video Search (`inputs[0].type`); a text input needs non-blank `Data` (`inputs[0].data`) and no `URL` (`inputs[0].url`), and an image input needs exactly one of a non-blank `URL` or base64 `Data` (`inputs[0]`); Design Search needs a non-blank `Query` or a non-blank `Images.GroupID` (`Field` is `query`). Extract needs 1 to 20 entries in `URLs` (`Field` is `urls`), each not blank and at most 2048 characters, counted as Unicode code points (`urls[1]` names the offending entry). Apart from the input `Type` and these `URLs` limits, it does not check value ranges, lengths or enum values (for example `Count` or `TimeRange`); out-of-range values come back from the server as a 400 and match `ErrBadRequest`. For Extract, an out-of-range `IncludeLinks.MaxLinks` or `Query` (over 500 characters), or an unknown `Mode`, `Format` or `Scope`, comes back as a 400; the server adjusts an out-of-range `Timeout` or `MaxAgeSeconds` to the nearest bound instead.
 
 Slices are omitted from the request when they are empty, so an empty slice cannot be sent explicitly.
 
@@ -237,7 +265,7 @@ Each method takes optional `octen.RequestOption` values after the params:
 
 | Option | Meaning |
 |---|---|
-| `octen.WithRequestTimeout(d)` | Timeout of each attempt of this call. Precedence: this option, then an explicit client `WithTimeout`, then the endpoint default (120 s for Broad Search, 30 s otherwise) |
+| `octen.WithRequestTimeout(d)` | Timeout of each attempt of this call. Precedence: this option, then an explicit client `WithTimeout`, then the endpoint default (120 s for Broad Search; for Extract, the body's per-URL `Timeout` plus 90 s; 30 s otherwise) |
 | `octen.WithRequestHeader(name, value)` | Extra header for this call, replacing a client header of the same name. `x-api-key` is refused with a `*ValidationError`; the key only comes from `WithAPIKey` or the `OCTEN_API_KEY` environment variable |
 
 There is no per-call cancellation option: pass a `context.Context` and cancel it.
@@ -255,14 +283,15 @@ resp, err := client.Search.Search(ctx, octen.SearchParams{Query: "hello"},
 client, err := octen.NewClient(
 	octen.WithAPIKey("sk-..."),                // default: $OCTEN_API_KEY; NewClient fails if neither is set
 	octen.WithBaseURL("https://api.octen.ai"), // default shown
-	octen.WithTimeout(60*time.Second),         // per attempt; applies to every endpoint once set
+	octen.WithTimeout(60*time.Second),         // per attempt; applies to every endpoint once set, Extract included
 	octen.WithMaxRetries(3),                   // default 3 (at most 4 requests)
 	octen.WithHeader("X-Trace-Id", "abc"),     // sent with every request; must not be x-api-key
 	octen.WithHTTPClient(myHTTPClient),        // default: a fresh http.Client
 )
 ```
 
-- The timeout counts each attempt and includes reading the response body. Once `WithTimeout` is set it applies to every endpoint, Broad Search included; without it, Broad Search defaults to 120 s (it runs many sub-queries) and every other endpoint to 30 s. `WithRequestTimeout` beats both.
+- The timeout counts each attempt and includes reading the response body. Once `WithTimeout` is set it applies to every endpoint, Broad Search and Extract included; without it, Broad Search defaults to 120 s (it runs many sub-queries), Extract to its per-URL `Timeout` plus 90 s, and every other endpoint to 30 s. `WithRequestTimeout` beats both.
+- Extract's default: the body's `Timeout` bounds each URL on the server, and a batch of up to 20 URLs needs headroom beyond it, so the SDK waits the per-URL value (clamped to 1 to 60 s like the server does, 30 s when unset) plus 90 s: 120 s by default, 150 s with `Timeout: octen.Int(60)`. A `WithTimeout` shorter than that (for example 30 s set for the search endpoints) also applies to Extract and can abort it while the server is still working; pass `WithRequestTimeout` to Extract in that case. A deadline on the `context.Context` you pass still applies and wins when it is shorter.
 - Only the `x-api-key` header carries credentials. Redirects are never followed (a redirect is reported as an `*APIError`), so the key cannot be forwarded to another host.
 - The `User-Agent` is `octen-go-sdk/<version>`.
 - `WithHeader` and `WithRequestHeader` can override `Content-Type`, `Accept` and `User-Agent`. Don't: the API expects JSON in both directions.
@@ -339,7 +368,7 @@ Check for `*TimeoutError` with `errors.As` before anything else. `errors.Is(err,
 - Network errors after the request was sent (a connection reset mid-response, an edge gateway recycling the connection) and any network error that is not a dial or DNS failure.
 - Other 4xx statuses.
 
-**Timeouts.** Each attempt gets its own timeout, which covers connecting, sending, and reading the whole response body. Precedence: `WithRequestTimeout`, then an explicit `WithTimeout`, then the endpoint default (30 s; 120 s for Broad Search).
+**Timeouts.** Each attempt gets its own timeout, which covers connecting, sending, and reading the whole response body. Precedence: `WithRequestTimeout`, then an explicit `WithTimeout`, then the endpoint default (30 s; 120 s for Broad Search; the per-URL `Timeout` plus 90 s for Extract). A shorter deadline on your context always wins.
 
 **`http.Client.Timeout`.** If you pass a client with `WithHTTPClient`, leave its `Timeout` at 0 and use the SDK timeouts instead. A non-zero `Timeout` also applies on top of them; when it fires it surfaces as a `*ConnectionError`, not a `*TimeoutError`, it is never retried (not even while dialling), and on Go 1.23 and newer it also satisfies `errors.Is(err, context.DeadlineExceeded)`.
 
@@ -350,6 +379,8 @@ Check for `*TimeoutError` with `errors.As` before anything else. `errors.Is(err,
 1. An edge gateway or load balancer returns 408, 502, 503 or 504 after the backend already succeeded; the retry then runs and is billed again.
 2. The server records the billing event but fails while writing the response (for example the connection is recycled mid-response). You see a network error, the SDK does not retry it, but the call was billed.
 
+Extract follows the same policy and is billed per successful URL. With the default of 3 retries a call is sent up to 4 times. Every retry that can bill follows a response the server already sent (408, 429, 500, 502, 503 or 504); dial and DNS failures are retried too, but those requests never reached the server and are not billed. So in the first case above, the URLs that succeeded can be billed once per attempt: up to 4 times, which for a batch of 20 URLs at the `advanced` rate is up to 80 advanced URL charges. `octen.WithMaxRetries(0)` sends each call once.
+
 For billing-sensitive jobs, use `octen.WithMaxRetries(0)` and handle retries yourself. Server-side idempotency keys are the proper fix and are not available yet.
 
 ## Differences from the Python SDK
@@ -358,7 +389,7 @@ Compared with `octen-py` 0.13.0:
 
 | Area | `octen-py` | `octen-go` |
 |---|---|---|
-| Parameter validation | Checks value ranges (such as `count`) locally | Checks only the required inputs (a non-blank `Query`, one Image or Video Search input) and that numbers are finite; ranges are checked by the server (400) |
+| Parameter validation | Checks value ranges (such as `count`) locally | Checks only the required inputs (a non-blank `Query`, one Image or Video Search input, 1 to 20 Extract `URLs`) and that numbers are finite; ranges are checked by the server (400) |
 | Image Search input | `query=` or `image_url=` keyword (or a raw `inputs=` list) | One `ImageSearchInput` in `Inputs` |
 | Video Search input | `query=` keyword | One `VideoSearchInput` in `Inputs` |
 | Unknown keys in nested request objects | Top level rejected, nested `highlight` / `full_content` allowed | Not possible: requests are typed structs |
@@ -372,6 +403,10 @@ Compared with `octen-py` 0.13.0:
 | Auth headers | `x-api-key` and `Authorization: Bearer` | `x-api-key` only |
 | Deprecated `topic` parameter, and `html_snippet` on Image Search | Still present | Not exposed |
 | Broad Search timeout | 30 s like every endpoint | 120 s, separate default, unless a client timeout is set explicitly |
+| Extract call | `client.extract.extract(urls=[...], ...)` with keyword arguments, plus `simple_extract(url)` | `client.Extract.Extract(ctx, octen.ExtractParams{URLs: ...})`; no single-URL shortcut |
+| Extract local checks | `urls` (1 to 20, each non-empty and at most 2048 characters), `query` length, `timeout` (1 to 60), `max_age_seconds` (not negative), `include_links.max_links` (1 to 1000) and the `mode`, `format` and `scope` values | `URLs` only (1 to 20, each non-blank and at most 2048 characters); the rest is left to the server, which rejects or adjusts it as described under [Local validation](#local-validation) |
+| Extract HTTP timeout | The client's timeout (30 s by default) unless `request_timeout=` is passed; the docs suggest raising it for `advanced` / `auto` | Derived from the per-URL `Timeout`: 120 s by default, 150 s with `Timeout` 60, unless a client or per-request timeout is set |
+| Extract response | `items` parses each result into a model (and raises on a malformed row); helpers such as `successful_by_mode`, `standard_urls`, `advanced_urls` | Typed structs; read `Data.Results` and `Meta.Usage` directly |
 
 Because the Python SDK by default retries more situations (client timeouts and every network error), it carries the double-billing risks described above and more unless `retry_after_send=False` is set.
 
@@ -402,7 +437,7 @@ OCTEN_LIVE=1 OCTEN_LIVE_VIDEO=1 OCTEN_API_KEY=... go test -count=1 -run TestLive
 go run ./internal/tools/specdrift   # compares the live OpenAPI spec with testdata/openapi.json
 ```
 
-`testdata/openapi.json` is a snapshot of the public OpenAPI spec that the contract test compares the types against. A weekly workflow runs `specdrift` and fails when the schemas of the ten endpoints change upstream; it never rewrites the snapshot. [testdata/README.md](testdata/README.md) describes the snapshot and how to update it.
+`testdata/openapi.json` is a snapshot of the public OpenAPI spec that the contract test compares the types against. A weekly workflow runs `specdrift` and fails when the schemas of the eleven endpoints change upstream, or the values the SDK relies on (the item bounds it checks, the `urls` limits of Extract and its per-URL `timeout` default and range); it never rewrites the snapshot. [testdata/README.md](testdata/README.md) describes the snapshot and how to update it.
 
 ## License
 

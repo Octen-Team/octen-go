@@ -35,6 +35,9 @@ func fakeAPI(t *testing.T) (*httptest.Server, func() []seen) {
 		"/image-search":    `{"code":0,"msg":"","request_id":"rid-image-search","data":{"results":[{"url":"https://example.com/i.jpg","width":10}]}}`,
 		"/video-search":    `{"code":0,"msg":"","request_id":"rid-video-search","data":{"results":[{"url":"https://example.com/v","duration_seconds":78}]}}`,
 		"/design-search":   `{"code":0,"msg":"success","request_id":"rid-design-search","data":{"images":[{"type":"slide","group":{"group_id":"g","position":1,"total":2}}],"results":[]}}`,
+		"/extract": `{"code":0,"msg":"success","request_id":"rid-extract","data":{"results":[{"url":"https://example.com/a","status":"success","resolved_mode":"standard","full_content":"# A","page_structure":null,` +
+			`"links":[{"url":"https://example.com/b","anchor_text":"B","is_external":false}]},{"url":"https://broken.invalid/","status":"failed","error_message":"failed"}]},` +
+			`"meta":{"usage":{"total_urls":2,"successful_urls":1,"successful_by_mode":{"standard_urls":1,"advanced_urls":0}}}}`,
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -87,12 +90,15 @@ func checkInput(in fakeInput, images bool) error {
 }
 
 // checkBody rejects a body without the input its path requires: one valid entry in inputs for
-// image and video search, a query or images.group_id for design search, and a query elsewhere.
+// image and video search, a query or images.group_id for design search, urls and an include_links
+// object for extract, and a query elsewhere.
 func checkBody(path string, body []byte) error {
 	var b struct {
-		Query  *string     `json:"query"`
-		Inputs []fakeInput `json:"inputs"`
-		Images *struct {
+		Query        *string         `json:"query"`
+		Inputs       []fakeInput     `json:"inputs"`
+		URLs         []string        `json:"urls"`
+		IncludeLinks json.RawMessage `json:"include_links"`
+		Images       *struct {
 			GroupID string `json:"group_id"`
 		} `json:"images"`
 	}
@@ -107,6 +113,11 @@ func checkBody(path string, body []byte) error {
 		}
 		if err := checkInput(b.Inputs[0], path == "/image-search"); err != nil {
 			return err
+		}
+	case "/extract":
+		// The consumer sends include_links as {} to prove an empty options struct reaches the wire.
+		if len(b.URLs) == 0 || b.Inputs != nil || string(b.IncludeLinks) != "{}" {
+			return errors.New("want urls and include_links {}")
 		}
 	case "/design-search":
 		if b.Inputs != nil || (!hasQuery && (b.Images == nil || b.Images.GroupID == "")) {
@@ -186,22 +197,23 @@ func TestConsumerModule(t *testing.T) {
 		"OK search rid-search", "OK broad-search rid-broad-search", "OK news-search rid-news-search",
 		"OK business-search rid-business-search", "OK pulse-search rid-pulse-search",
 		"OK place-search rid-place-search", "OK search-premier rid-search-premier", "OK image-search rid-image-search",
-		"OK video-search rid-video-search", "OK design-search rid-design-search", "OK error-path 400 rid-bad", "OK validation query",
+		"OK video-search rid-video-search", "OK design-search rid-design-search", "OK extract rid-extract",
+		"OK error-path 400 rid-bad", "OK validation query", "OK validation urls[1]",
 	} {
 		if !strings.Contains(string(out), want) {
 			t.Errorf("output lacks %q", want)
 		}
 	}
 
-	// Ten successes, then the 400; the blank query must not reach the server.
+	// Eleven successes, then the 400; the blank query and the blank URL must not reach the server.
 	wantPaths := []string{"/search", "/broad-search", "/news-search", "/business-search", "/pulse-search", "/place-search",
-		"/search-premier", "/image-search", "/video-search", "/design-search", "/search"}
+		"/search-premier", "/image-search", "/video-search", "/design-search", "/extract", "/search"}
 	got := requests()
 	if len(got) != len(wantPaths) {
 		t.Fatalf("server saw %d requests, want %d: %+v", len(got), len(wantPaths), got)
 	}
 	for i, r := range got {
-		if r.path != wantPaths[i] || r.key != "e2e-key" || r.agent != "octen-go-sdk/0.2.0" {
+		if r.path != wantPaths[i] || r.key != "e2e-key" || r.agent != "octen-go-sdk/0.3.0" {
 			t.Errorf("request %d = %+v, want path %s with the SDK key and user agent", i, r, wantPaths[i])
 		}
 	}
@@ -269,6 +281,10 @@ func TestFakeAPIChecksBodyShape(t *testing.T) {
 		{"/design-search", `{"images":{"group_id":"g"}}`, true},
 		{"/design-search", `{"inputs":[{"type":"text","data":"q"}]}`, false},
 		{"/design-search", `{"images":{"group_id":""}}`, false},
+		{"/extract", `{"urls":["https://example.com/a"],"include_links":{}}`, true},
+		{"/extract", `{"urls":["https://example.com/a"]}`, false},
+		{"/extract", `{"urls":[],"include_links":{}}`, false},
+		{"/extract", `{"query":"q","include_links":{}}`, false},
 		{"/search", `not json`, false},
 		{"/search", `{"query":"q","inputs":[{"type":"text","data":"q"}]}`, false},
 	}
