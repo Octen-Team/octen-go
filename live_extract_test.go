@@ -156,7 +156,8 @@ func TestLiveExtract(t *testing.T) {
 			t.Fatalf("control resolved_mode = %q, want standard", m)
 		}
 		r := extractSuccess(t, liveExtractCall(t, c, "advanced", octen.ExtractParams{URLs: []string{extractA}, Mode: octen.String("advanced")}), extractA, "advanced")
-		// Octen documents that an advanced request may resolve to standard; kept strict so a dropped mode is caught.
+		// The octen Python SDK 0.13.0 docstring says an advanced request can resolve to standard;
+		// kept strict so a dropped mode is caught.
 		if r.ResolvedMode != "advanced" {
 			t.Fatalf("resolved_mode = %q, want advanced", r.ResolvedMode)
 		}
@@ -264,18 +265,50 @@ func TestLiveExtract(t *testing.T) {
 
 	// Ranges outside urls are the server's to check; a URL that cannot resolve keeps them unbilled even if accepted.
 	t.Run("server_side_bounds_are_400", func(t *testing.T) {
+		broken := func(p octen.ExtractParams) octen.ExtractParams { p.URLs = []string{extractBroken}; return p }
 		for _, tc := range []struct {
 			name string
 			p    octen.ExtractParams
 		}{
-			{"include_links.max_links 0", octen.ExtractParams{URLs: []string{extractBroken}, IncludeLinks: &octen.ExtractLinksOptions{MaxLinks: octen.Int(0)}}},
-			{"include_links.max_links 1001", octen.ExtractParams{URLs: []string{extractBroken}, IncludeLinks: &octen.ExtractLinksOptions{MaxLinks: octen.Int(1001)}}},
-			{"a query of 501 characters", octen.ExtractParams{URLs: []string{extractBroken}, Query: octen.String(strings.Repeat("q", 501))}},
+			{"include_links.max_links 0", broken(octen.ExtractParams{IncludeLinks: &octen.ExtractLinksOptions{MaxLinks: octen.Int(0)}})},
+			{"include_links.max_links 1001", broken(octen.ExtractParams{IncludeLinks: &octen.ExtractLinksOptions{MaxLinks: octen.Int(1001)}})},
+			{"a query of 501 characters", broken(octen.ExtractParams{Query: octen.String(strings.Repeat("q", 501))})},
+			{"unknown mode", broken(octen.ExtractParams{Mode: octen.String("fastest")})},
+			{"unknown format", broken(octen.ExtractParams{Format: octen.String("html")})},
+			{"unknown include_links.scope", broken(octen.ExtractParams{IncludeLinks: &octen.ExtractLinksOptions{Scope: octen.String("prefer_none")}})},
 		} {
 			_, err := c.Extract.Extract(liveContext(t), tc.p)
 			t.Logf("%s: %v", tc.name, err)
-			if !errors.Is(err, octen.ErrBadRequest) || errors.Is(err, octen.ErrServer) {
-				t.Errorf("%s: err %v, want ErrBadRequest", tc.name, err)
+			var apiErr *octen.APIError
+			if !errors.Is(err, octen.ErrBadRequest) || !errors.As(err, &apiErr) || apiErr.StatusCode != 400 {
+				t.Errorf("%s: err %v, want a structured 400 *APIError", tc.name, err)
+			}
+		}
+	})
+
+	// The reference says out-of-range timeout and max_age_seconds are adjusted, not rejected. The
+	// call still succeeds; meta.warning naming the field shows the value reached the server.
+	t.Run("out_of_range_timeout_and_max_age_are_adjusted", func(t *testing.T) {
+		for _, tc := range []struct {
+			name, field string
+			p           octen.ExtractParams
+		}{
+			{"timeout 0", "timeout", octen.ExtractParams{URLs: []string{extractBroken}, Timeout: octen.Int(0)}},
+			{"timeout 61", "timeout", octen.ExtractParams{URLs: []string{extractBroken}, Timeout: octen.Int(61)}},
+			{"max_age_seconds 0", "max_age_seconds", octen.ExtractParams{URLs: []string{extractBroken}, MaxAgeSeconds: octen.Int(0)}},
+		} {
+			res, err := c.Extract.Extract(liveContext(t), tc.p)
+			if err != nil {
+				t.Errorf("%s: err %v, want the value adjusted and the call accepted", tc.name, err)
+				continue
+			}
+			warning := ""
+			if res.Meta != nil && res.Meta.Warning != nil {
+				warning = *res.Meta.Warning
+			}
+			t.Logf("%s: request_id=%s warning=%q", tc.name, res.RequestID, warning)
+			if !strings.Contains(warning, tc.field) {
+				t.Errorf("%s: meta.warning %q does not mention %s", tc.name, warning, tc.field)
 			}
 		}
 	})

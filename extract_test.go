@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -111,15 +114,22 @@ func TestExtractValidationSendsNothing(t *testing.T) {
 	for i := range tooMany {
 		tooMany[i] = "https://example.com/"
 	}
-	for name, p := range map[string]ExtractParams{
-		"no urls":    {},
-		"21 urls":    {URLs: tooMany},
-		"blank url":  {URLs: []string{"https://example.com/", " "}},
-		"2049 chars": {URLs: []string{strings.Repeat("a", 2049)}},
+	for _, tc := range []struct {
+		name, field string
+		p           ExtractParams
+	}{
+		{"no urls", "urls", ExtractParams{}},
+		{"21 urls", "urls", ExtractParams{URLs: tooMany}},
+		{"blank url", "urls[1]", ExtractParams{URLs: []string{"https://example.com/", " "}}},
+		{"2049 chars", "urls[0]", ExtractParams{URLs: []string{strings.Repeat("a", 2049)}}},
 	} {
-		if _, err := c.Extract.Extract(context.Background(), p); err == nil {
-			t.Errorf("%s: no error", name)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			resp, err := c.Extract.Extract(context.Background(), tc.p)
+			if resp != nil {
+				t.Fatalf("resp = %v, want nil", resp)
+			}
+			wantValidationError(t, err, tc.field)
+		})
 	}
 	if got := rec.hits.Load(); got != 0 {
 		t.Fatalf("server saw %d requests, want 0", got)
@@ -250,7 +260,7 @@ func TestExtractDefaultTimeout(t *testing.T) {
 		{Int(0), 91 * time.Second},
 		{Int(-5), 91 * time.Second},
 		{Int(61), 150 * time.Second},
-		{Int(1 << 40), 150 * time.Second},
+		{Int(math.MaxInt32), 150 * time.Second},
 	} {
 		if got := extractTimeout(tc.perURL); got != tc.want {
 			t.Errorf("extractTimeout(%v) = %v, want %v", deref(tc.perURL), got, tc.want)
@@ -321,20 +331,35 @@ func TestExtractTimeoutPrecedence(t *testing.T) {
 // timeout are not, and WithMaxRetries(0) sends once.
 func TestExtractRetryPolicy(t *testing.T) {
 	p := ExtractParams{URLs: []string{"https://example.com/"}}
-	t.Run("503 then success", func(t *testing.T) {
-		s := newFakeServer(t, func(w http.ResponseWriter, r *http.Request, n int) {
+	t.Run("503 then success, same body", func(t *testing.T) {
+		var mu sync.Mutex
+		var bodies []string
+		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			b, _ := io.ReadAll(r.Body)
+			mu.Lock()
+			bodies = append(bodies, string(b))
+			n := len(bodies)
+			mu.Unlock()
 			if n == 1 {
 				w.WriteHeader(503)
 				return
 			}
 			writeOK(w)
-		})
+		}))
+		t.Cleanup(s.Close)
 		c, rec := newDefaultClient(t, s.URL)
-		if _, err := c.Extract.Extract(context.Background(), p); err != nil {
+		full := ExtractParams{URLs: []string{"https://a.example/", "https://b.example/"}, Mode: String("advanced"),
+			Query: String("q"), IncludeLinks: &ExtractLinksOptions{}}
+		if _, err := c.Extract.Extract(context.Background(), full); err != nil {
 			t.Fatal(err)
 		}
-		if got := s.hits.Load(); got != 2 || len(rec.got()) != 1 {
-			t.Fatalf("hits %d waits %v, want 2 and one wait", got, rec.got())
+		mu.Lock()
+		defer mu.Unlock()
+		if len(bodies) != 2 || len(rec.got()) != 1 {
+			t.Fatalf("requests %d waits %v, want 2 and one wait", len(bodies), rec.got())
+		}
+		if bodies[0] == "" || bodies[1] != bodies[0] {
+			t.Fatalf("retried body %q differs from the first %q", bodies[1], bodies[0])
 		}
 	})
 	t.Run("400 not retried", func(t *testing.T) {
