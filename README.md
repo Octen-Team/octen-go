@@ -228,11 +228,16 @@ pages, err := client.Extract.Extract(ctx, octen.ExtractParams{
 	IncludeLinks:  &octen.ExtractLinksOptions{MaxLinks: octen.Int(20)}, // &octen.ExtractLinksOptions{} uses the server defaults
 })
 if err == nil && pages.Data != nil {
-	for _, item := range pages.Data.Results {
-		if item.Status == "success" && item.FullContent != nil {
-			fmt.Println(item.URL, item.ResolvedMode, len(*item.FullContent))
-		} else if item.Status == "failed" {
-			fmt.Println(item.URL, "failed:", item.ErrorMessage)
+	for _, item := range pages.Data.Results { // match items to your input by URL
+		switch {
+		case item.Status == "failed":
+			fmt.Println(item.URL, "failed:", item.ErrorMessage) // not billed
+		case item.Status != "success":
+			fmt.Println(item.URL, "unknown status:", item.Status)
+		case item.FullContent != nil:
+			fmt.Println(item.URL, item.ResolvedMode, len(*item.FullContent), "bytes of content")
+		default: // with Query set, Highlights replace FullContent
+			fmt.Println(item.URL, item.ResolvedMode, len(item.Highlights), "highlights")
 		}
 	}
 	if pages.Meta != nil && pages.Meta.Usage != nil && pages.Meta.Usage.SuccessfulByMode != nil {
@@ -374,7 +379,7 @@ Check for `*TimeoutError` with `errors.As` before anything else. `errors.Is(err,
 1. An edge gateway or load balancer returns 408, 502, 503 or 504 after the backend already succeeded; the retry then runs and is billed again.
 2. The server records the billing event but fails while writing the response (for example the connection is recycled mid-response). You see a network error, the SDK does not retry it, but the call was billed.
 
-Extract follows the same policy and is billed per successful URL, so in the first case the retry can bill every URL that succeeded on the first attempt a second time, up to 20 URLs at the `advanced` rate.
+Extract follows the same policy and is billed per successful URL. With the default of 3 retries a call is sent up to 4 times, and every retry follows a response the server already sent (408, 429, 500, 502, 503 or 504). So in the first case above, the URLs that succeeded can be billed once per attempt: up to 4 times, which for a batch of 20 URLs at the `advanced` rate is up to 80 advanced URL charges. `octen.WithMaxRetries(0)` sends each call once.
 
 For billing-sensitive jobs, use `octen.WithMaxRetries(0)` and handle retries yourself. Server-side idempotency keys are the proper fix and are not available yet.
 
