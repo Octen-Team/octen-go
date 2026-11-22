@@ -402,6 +402,9 @@ func TestEnumTagsOnRequestFields(t *testing.T) {
 	check(reflect.TypeOf(DesignWebSearchOptions{}), "Language", langs)
 	check(reflect.TypeOf(DesignWebSearchOptions{}), "TimeBasis", "auto,published,crawled")
 	check(reflect.TypeOf(DesignWebSearchOptions{}), "TimeRange", "day,week,month,year,d,w,m,y")
+	check(reflect.TypeOf(ExtractParams{}), "Mode", "standard,advanced,auto")
+	check(reflect.TypeOf(ExtractParams{}), "Format", "markdown,text")
+	check(reflect.TypeOf(ExtractLinksOptions{}), "Scope", "prefer_internal,prefer_external")
 }
 
 // A decoded response must survive json.Marshal and json.Unmarshal, so callers can cache it.

@@ -226,7 +226,7 @@ func TestFlattenAdditionalPropertiesTrueIsFreeForm(t *testing.T) {
 
 func TestEndpointSchemasFlatten(t *testing.T) {
 	doc := loadSnapshot(t)
-	for _, name := range []string{"Search", "BroadSearch", "NewsSearch", "BusinessSearch", "PulseSearch", "PlaceSearch", "ImageSearch", "VideoSearch", "DesignSearch"} {
+	for _, name := range []string{"Search", "BroadSearch", "NewsSearch", "BusinessSearch", "PulseSearch", "PlaceSearch", "ImageSearch", "VideoSearch", "DesignSearch", "Extract"} {
 		if _, err := Flatten(doc, name+"Request", Request); err != nil {
 			t.Errorf("%sRequest: %v", name, err)
 		}
@@ -274,5 +274,38 @@ func TestItemBounds(t *testing.T) {
 	}
 	if _, err := doc.ItemBounds("ImageSearchRequest", "count"); err == nil {
 		t.Error("ItemBounds on a non-array property succeeded")
+	}
+	if got, err := doc.ItemBounds("ExtractRequest", "urls"); err != nil || got != "minItems=unset maxItems=unset" {
+		t.Errorf("ItemBounds(ExtractRequest.urls) = %q, %v", got, err)
+	}
+}
+
+func TestPropertyKeywords(t *testing.T) {
+	doc := loadSnapshot(t)
+	if got, err := doc.PropertyKeywords("ExtractRequest", "timeout", false, "default", "minimum", "maximum"); err != nil || got != "default=30 minimum=1 maximum=60" {
+		t.Errorf("timeout = %q, %v", got, err)
+	}
+	if got, err := doc.PropertyKeywords("ExtractRequest", "urls", true, "minLength", "maxLength"); err != nil || got != "minLength=unset maxLength=unset" {
+		t.Errorf("urls items = %q, %v", got, err)
+	}
+	if _, err := doc.PropertyKeywords("ExtractRequest", "absent", false, "default"); err == nil {
+		t.Error("PropertyKeywords on a missing property succeeded")
+	}
+	if _, err := doc.PropertyKeywords("ExtractRequest", "timeout", true, "maxLength"); err == nil {
+		t.Error("PropertyKeywords on the items of a non-array succeeded")
+	}
+}
+
+func TestPropertyDescription(t *testing.T) {
+	doc := loadSnapshot(t)
+	got, err := doc.PropertyDescription("ExtractRequest", "urls")
+	if want := "List of URLs to extract content from. Maximum URLs per request: 20. Maximum length per URL: 2048. Failed URLs are not billed."; err != nil || got != want {
+		t.Errorf("urls description = %q, %v", got, err)
+	}
+	if got, err := parse(t, `{"X":{"type":"object","properties":{"a":{"type":"string"}}}}`).PropertyDescription("X", "a"); err != nil || got != "unset" {
+		t.Errorf("no description = %q, %v", got, err)
+	}
+	if _, err := doc.PropertyDescription("ExtractRequest", "absent"); err == nil {
+		t.Error("PropertyDescription on a missing property succeeded")
 	}
 }

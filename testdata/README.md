@@ -9,8 +9,9 @@ Snapshot of the public Octen OpenAPI spec.
 - Extended: 2026-11-21, the `/search-premier` and `/design-search` operations and the `Design*` schemas were copied in from the live spec of that day; the rest of the file was left as it was
 - One edit: the `streamContentDelta` example in `/v1/messages` carried a Chinese weather sentence (`delta.text`); it was translated to English when the snapshot was taken (this repository is English-only). Re-apply that change after a re-download.
 
-The contract test (`contract_test.go`) compares the request and response types of the ten endpoints against this file.
+The contract test (`contract_test.go`) compares the request and response types of the eleven endpoints against this file.
 The weekly spec-drift workflow (`internal/tools/specdrift`) compares it with the live spec and reports drift, but never overwrites it.
+The `/extract` operation and the `Extract*` schemas were already in the 2026-11-17 download; on 2026-11-22 they still matched the live spec, so the file was not changed for Extract.
 Update it by hand: download it again, update the date above, then fix the types or `known_diffs.json`.
 
 ## known_diffs.json

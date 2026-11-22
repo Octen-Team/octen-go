@@ -195,6 +195,10 @@ var endpointCalls = []endpointCall{
 		_, err := c.Search.DesignSearch(context.Background(), DesignSearchParams{Query: String("q")}, o...)
 		return err
 	}},
+	{"/extract", 120 * time.Second, func(c *Client, o ...RequestOption) error {
+		_, err := c.Extract.Extract(context.Background(), ExtractParams{URLs: []string{"https://example.com/"}}, o...)
+		return err
+	}},
 }
 
 // The effective per-attempt timeout is read off the request context deadline, which the

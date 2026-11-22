@@ -51,12 +51,12 @@ func TestIdenticalSpecsExitZero(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit %d, stderr: %s", code, errOut)
 	}
-	if !strings.Contains(out, "20 request/response schemas") {
-		t.Errorf("stdout = %q, want the count of 20 compared schemas", out)
+	if !strings.Contains(out, "22 request/response schemas") {
+		t.Errorf("stdout = %q, want the count of 22 compared schemas", out)
 	}
 }
 
-// The four endpoints added after the first release are watched like the original six.
+// The endpoints added after the first release are watched like the original six.
 func TestChangeInAddedEndpointIsDrift(t *testing.T) {
 	for schema, want := range map[string]string{
 		"ImageSearchRequest":  "/image-search request",
@@ -64,6 +64,8 @@ func TestChangeInAddedEndpointIsDrift(t *testing.T) {
 		"DesignImageOptions":  "/design-search request",
 		"DesignImageResult":   "/design-search response",
 		"SearchResponse":      "/search-premier response",
+		"ExtractRequest":      "/extract request",
+		"ExtractResult":       "/extract response",
 	} {
 		code, _, errOut := runWith(t, mutated(t, schema), snapshotPath)
 		if code != 1 || !strings.Contains(errOut, want) || !strings.Contains(errOut, "brand_new_field") {
@@ -104,7 +106,7 @@ func TestUnusableInputExitsTwo(t *testing.T) {
 
 // Schemas outside the watched endpoints change often and must not raise the alarm.
 func TestChangeOutsideTheWatchedEndpointsIsIgnored(t *testing.T) {
-	if code, _, errOut := runWith(t, mutated(t, "ExtractRequest"), snapshotPath); code != 0 {
+	if code, _, errOut := runWith(t, mutated(t, "EmbeddingRequest"), snapshotPath); code != 0 {
 		t.Fatalf("exit %d, want 0; stderr: %s", code, errOut)
 	}
 }
@@ -207,5 +209,41 @@ func TestInputsItemCountChangeIsDrift(t *testing.T) {
 		if code != 1 || !strings.Contains(errOut, c.want) || !strings.Contains(errOut, "maxItems") {
 			t.Errorf("%s: exit %d, want 1 naming %q with the item bounds; stderr: %s", c.schema, code, c.want, errOut)
 		}
+	}
+}
+
+// Flatten ignores descriptions, lengths and value ranges, yet the SDK relies on these Extract values:
+// the urls limits it checks locally (stated in the description) and the per-URL timeout its default derives from.
+func TestExtractLocalCheckChangeIsDrift(t *testing.T) {
+	prop := func(props map[string]any, name string) map[string]any { return props[name].(map[string]any) }
+	cases := []struct {
+		name, want string
+		change     func(props map[string]any)
+	}{
+		{"urls maxItems added", "/extract request.urls: item bounds", func(p map[string]any) { prop(p, "urls")["maxItems"] = 20.0 }},
+		{"urls description", "/extract request.urls: description", func(p map[string]any) {
+			prop(p, "urls")["description"] = "List of URLs to extract content from. Maximum URLs per request: 50."
+		}},
+		{"urls item maxLength added", "/extract request.urls[]: item length bounds", func(p map[string]any) {
+			prop(p, "urls")["items"].(map[string]any)["maxLength"] = 2048.0
+		}},
+		{"urls item minLength added", "/extract request.urls[]: item length bounds", func(p map[string]any) {
+			prop(p, "urls")["items"].(map[string]any)["minLength"] = 1.0
+		}},
+		{"timeout maximum", "/extract request.timeout: default and range", func(p map[string]any) { prop(p, "timeout")["maximum"] = 120.0 }},
+		{"timeout minimum removed", "/extract request.timeout: default and range", func(p map[string]any) { delete(prop(p, "timeout"), "minimum") }},
+		{"timeout default", "/extract request.timeout: default and range", func(p map[string]any) { prop(p, "timeout")["default"] = 60.0 }},
+	}
+	for _, c := range cases {
+		live := edited(t, "ExtractRequest", c.change)
+		code, _, errOut := runWith(t, live, snapshotPath)
+		if code != 1 || !strings.Contains(errOut, c.want) {
+			t.Errorf("%s: exit %d, want 1 naming %q; stderr: %s", c.name, code, c.want, errOut)
+		}
+	}
+	// A property the check reads that disappears cannot be compared, which needs a human look.
+	live := edited(t, "ExtractRequest", func(p map[string]any) { delete(p, "timeout") })
+	if code, _, errOut := runWith(t, live, snapshotPath); code != 2 {
+		t.Errorf("timeout removed: exit %d, want 2; stderr: %s", code, errOut)
 	}
 }

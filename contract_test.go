@@ -32,6 +32,7 @@ var contractCases = []contractCase{
 	{"/image-search", "ImageSearchRequest", reflect.TypeOf(ImageSearchParams{}), "ImageSearchResponse", reflect.TypeOf(ImageSearchResponse{})},
 	{"/video-search", "VideoSearchRequest", reflect.TypeOf(VideoSearchParams{}), "VideoSearchResponse", reflect.TypeOf(VideoSearchResponse{})},
 	{"/design-search", "DesignSearchRequest", reflect.TypeOf(DesignSearchParams{}), "DesignSearchResponse", reflect.TypeOf(DesignSearchResponse{})},
+	{"/extract", "ExtractRequest", reflect.TypeOf(ExtractParams{}), "ExtractResponse", reflect.TypeOf(ExtractResponse{})},
 }
 
 // goUnion describes a Go type that decodes a discriminated OpenAPI oneOf.
@@ -287,7 +288,7 @@ func hasOption(opts, want string) bool {
 }
 
 // goNames are the json name parts that are not simply capitalised in Go field names.
-var goNames = map[string]string{"id": "ID", "url": "URL", "hq": "HQ", "cik": "CIK", "linkedin": "LinkedIn"}
+var goNames = map[string]string{"id": "ID", "url": "URL", "urls": "URLs", "hq": "HQ", "cik": "CIK", "linkedin": "LinkedIn"}
 
 func goFieldName(jsonName string) string {
 	var b strings.Builder
@@ -397,11 +398,15 @@ func TestDescriberShapeRules(t *testing.T) {
 	if got := goFieldName("linkedin_url"); got != "LinkedInURL" {
 		t.Errorf("goFieldName(linkedin_url) = %s", got)
 	}
+	if got := goFieldName("successful_urls"); got != "SuccessfulURLs" {
+		t.Errorf("goFieldName(successful_urls) = %s", got)
+	}
 }
 
 // Every SDK method must be covered by contractCases, and nothing else may be listed there.
 func TestContractCoversEverySDKMethod(t *testing.T) {
-	if n := reflect.TypeOf(&SearchService{}).NumMethod() + reflect.TypeOf(&PlaceSearchService{}).NumMethod(); n != len(endpointCalls) {
+	n := reflect.TypeOf(&SearchService{}).NumMethod() + reflect.TypeOf(&PlaceSearchService{}).NumMethod() + reflect.TypeOf(&ExtractService{}).NumMethod()
+	if n != len(endpointCalls) {
 		t.Fatalf("SDK has %d methods but endpointCalls lists %d; add the new method to both tables", n, len(endpointCalls))
 	}
 	rec := newRecorder(t)

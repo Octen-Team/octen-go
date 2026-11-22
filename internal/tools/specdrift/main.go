@@ -1,7 +1,6 @@
-// Command specdrift compares the SDK endpoints' schemas, and the item bounds of the inputs the
-// SDK checks locally, in the live OpenAPI spec with testdata/openapi.json. Exit codes: 0 no
-// drift, 1 drift, 2 cannot run. It never rewrites the snapshot, which is updated by hand after
-// a drift is reviewed.
+// Command specdrift compares the SDK endpoints' schemas and the request values the SDK relies on
+// (localChecks) in the live OpenAPI spec with testdata/openapi.json. Exit codes: 0 no drift, 1 drift,
+// 2 cannot run. It never rewrites the snapshot, which is updated by hand after a drift is reviewed.
 package main
 
 import (
@@ -10,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,14 +24,37 @@ const (
 
 var endpoints = []string{
 	"/search", "/broad-search", "/news-search", "/business-search", "/pulse-search", "/place-search",
-	"/search-premier", "/image-search", "/video-search", "/design-search",
+	"/search-premier", "/image-search", "/video-search", "/design-search", "/extract",
 }
 
-// itemBounds lists the arrays whose item count the SDK enforces locally; Flatten ignores
-// minItems and maxItems, so their bounds are compared separately.
-var itemBounds = []struct{ path, property string }{
-	{"/image-search", "inputs"},
-	{"/video-search", "inputs"},
+// localCheck reads a request value that Flatten ignores (counts, lengths, ranges, descriptions)
+// but the SDK relies on, so it is compared separately.
+type localCheck struct {
+	path, property, what, why string
+	read                      func(doc *spec.Doc, schema string) (string, error)
+}
+
+const checkedLocally = "the SDK checks them locally"
+
+var localChecks = []localCheck{
+	{"/image-search", "inputs", "item bounds", checkedLocally, itemBounds("inputs")},
+	{"/video-search", "inputs", "item bounds", checkedLocally, itemBounds("inputs")},
+	{"/extract", "urls", "item bounds", checkedLocally, itemBounds("urls")},
+	// The spec states the limits of urls (20 URLs, 2048 characters each) only in this text.
+	{"/extract", "urls", "description", "it states the URL limits the SDK checks locally", func(d *spec.Doc, s string) (string, error) {
+		text, err := d.PropertyDescription(s, "urls")
+		return strconv.Quote(text), err
+	}},
+	{"/extract", "urls[]", "item length bounds", checkedLocally, func(d *spec.Doc, s string) (string, error) {
+		return d.PropertyKeywords(s, "urls", true, "minLength", "maxLength")
+	}},
+	{"/extract", "timeout", "default and range", "the SDK derives the default HTTP timeout of Extract from them", func(d *spec.Doc, s string) (string, error) {
+		return d.PropertyKeywords(s, "timeout", false, "default", "minimum", "maximum")
+	}},
+}
+
+func itemBounds(property string) func(*spec.Doc, string) (string, error) {
+	return func(d *spec.Doc, schema string) (string, error) { return d.ItemBounds(schema, property) }
 }
 
 type flatSchema struct {
@@ -55,12 +78,12 @@ func run(getenv func(string) string, stdout, stderr io.Writer) (code int) {
 	url := envOr(getenv, "SPEC_DRIFT_URL", defaultURL)
 	snapshotPath := envOr(getenv, "SPEC_DRIFT_SNAPSHOT", defaultSnapshot)
 
-	snapshot, snapBounds, err := flattenAll(func() ([]byte, error) { return os.ReadFile(snapshotPath) })
+	snapshot, snapValues, err := flattenAll(func() ([]byte, error) { return os.ReadFile(snapshotPath) })
 	if err != nil {
 		fmt.Fprintf(stderr, "specdrift: cannot read the snapshot (%s): %v\n", snapshotPath, err)
 		return 2
 	}
-	live, liveBounds, err := flattenAll(func() ([]byte, error) { return fetch(url) })
+	live, liveValues, err := flattenAll(func() ([]byte, error) { return fetch(url) })
 	if err != nil {
 		fmt.Fprintf(stderr, "specdrift: cannot read the live spec (%s): %v\n", url, err)
 		return 2
@@ -72,10 +95,10 @@ func run(getenv func(string) string, stdout, stderr io.Writer) (code int) {
 			diffs = append(diffs, fmt.Sprintf("%s %s%s", snap.name, snap.side, d))
 		}
 	}
-	for i, b := range itemBounds {
-		if snapBounds[i] != liveBounds[i] {
-			diffs = append(diffs, fmt.Sprintf("%s request.%s: item bounds changed (snapshot %s, live %s); the SDK checks them locally",
-				b.path, b.property, snapBounds[i], liveBounds[i]))
+	for i, lc := range localChecks {
+		if snapValues[i] != liveValues[i] {
+			diffs = append(diffs, fmt.Sprintf("%s request.%s: %s changed (snapshot %s, live %s); %s",
+				lc.path, lc.property, lc.what, snapValues[i], liveValues[i], lc.why))
 		}
 	}
 	if len(diffs) == 0 {
@@ -148,19 +171,19 @@ func flattenAll(load func() ([]byte, error)) ([]flatSchema, []string, error) {
 			out = append(out, flatSchema{path, s.side, obj})
 		}
 	}
-	var bounds []string
-	for _, b := range itemBounds {
-		req, _, err := doc.PostRefs(b.path)
+	var values []string
+	for _, lc := range localChecks {
+		req, _, err := doc.PostRefs(lc.path)
 		if err != nil {
 			return nil, nil, err
 		}
-		s, err := doc.ItemBounds(req, b.property)
+		v, err := lc.read(doc, req)
 		if err != nil {
 			return nil, nil, err
 		}
-		bounds = append(bounds, s)
+		values = append(values, v)
 	}
-	return out, bounds, nil
+	return out, values, nil
 }
 
 // compare reports how live differs from snapshot. Diff is not symmetric (it only flags a
