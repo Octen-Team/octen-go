@@ -233,11 +233,9 @@ func TestLiveMatrixBroadSearch(t *testing.T) {
 				}
 			}
 		}
-		if paired < 2 {
-			t.Skipf("fewer than 2 results paired by URL (%d)", paired)
-		}
-		if shorter == 0 {
-			t.Skipf("no highlight under half (%d paired)", paired)
+		// Two pairs, not one: ordinary variation between two live calls could shorten a single highlight.
+		if shorter < 2 {
+			t.Skipf("fewer than 2 pairs under half (%d of %d paired)", shorter, paired)
 		}
 	})
 }
