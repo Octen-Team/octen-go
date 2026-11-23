@@ -519,3 +519,30 @@ func TestSearchPremierBodyMatchesSearch(t *testing.T) {
 		t.Fatalf("search %s %s, premier %s %s", got[0].path, got[0].body, got[1].path, got[1].body)
 	}
 }
+
+// Wire bodies per OpenAPI WebSearchOptions.result_type (testdata/openapi.json): top level on /search,
+// inside search_options on /broad-search. SearchParams and WebSearchOptions are separate structs.
+func TestResultTypeBodies(t *testing.T) {
+	rec := newRecorder(t)
+	c := newTestClient(t, rec.URL)
+	ctx := context.Background()
+	if _, err := c.Search.Search(ctx, SearchParams{Query: "q", ResultType: String("dynamic"), Count: Int(3)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Search.BroadSearch(ctx, BroadSearchParams{Query: "q", SearchOptions: &WebSearchOptions{ResultType: String("dynamic")}}); err != nil {
+		t.Fatal(err)
+	}
+	want := []struct{ path, body string }{
+		{"/search", `{"query":"q","result_type":"dynamic","count":3}`},
+		{"/broad-search", `{"query":"q","search_options":{"result_type":"dynamic"}}`},
+	}
+	got := rec.requests()
+	if len(got) != len(want) {
+		t.Fatalf("server saw %d requests, want %d", len(got), len(want))
+	}
+	for i, w := range want {
+		if got[i].path != w.path || got[i].body != w.body {
+			t.Errorf("request %d = %s %s\nwant        %s %s", i, got[i].path, got[i].body, w.path, w.body)
+		}
+	}
+}

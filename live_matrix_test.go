@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -118,6 +119,16 @@ func TestLiveMatrixSearch(t *testing.T) {
 			search(t, octen.SearchParams{Query: "octen search api", Count: octen.Int(1), Safesearch: octen.String(s)})
 		})
 	}
+	// A dropped parameter is echoed back as "standard" (spec: SearchMeta.result_type).
+	t.Run("result_type_dynamic_echoed", func(t *testing.T) {
+		res := search(t, octen.SearchParams{Query: "octen search api", Count: octen.Int(3), ResultType: octen.String("dynamic")})
+		if res.Meta == nil || res.Meta.ResultType != "dynamic" {
+			t.Errorf("meta = %+v, want result_type dynamic echoed", res.Meta)
+		}
+		if n := len(res.Data.Results); n < 1 || n > 3 {
+			t.Errorf("results = %d, want 1 to 3", n)
+		}
+	})
 	t.Run("include_images", func(t *testing.T) {
 		res := search(t, octen.SearchParams{Query: "golden gate bridge", Count: octen.Int(1), IncludeImages: octen.Bool(true)})
 		if len(res.Data.Results) > 0 {
@@ -173,6 +184,58 @@ func TestLiveMatrixBroadSearch(t *testing.T) {
 		}
 		if n := len(res.Data.Queries); n > 2 {
 			t.Errorf("queries = %d, want at most 2", n)
+		}
+	})
+	// /broad-search does not echo result_type, so compare a standard control with a dynamic call.
+	// Observed 2026-11-23: same queries, 3 of 3 URLs paired, dynamic/standard highlight length 0.25, 0.37, 0.26.
+	t.Run("search_options_result_type_dynamic_shortens_highlights", func(t *testing.T) {
+		const query = "EU AI Act enforcement timeline"
+		call := func(resultType string) *octen.BroadSearchResponse {
+			t.Helper()
+			start := time.Now()
+			res, err := c.Search.BroadSearch(liveContext(t), octen.BroadSearchParams{
+				Query:      query,
+				MaxQueries: octen.Int(1),
+				SearchOptions: &octen.WebSearchOptions{
+					ResultType: octen.String(resultType), Count: octen.Int(3), Highlight: &octen.HighlightOptions{Enable: octen.Bool(true)},
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			matrixOK(t, res.RequestID, start)
+			if res.Data == nil {
+				t.Fatal("response has no data")
+			}
+			return res
+		}
+		control, dynamic := call("standard"), call("dynamic")
+		if !slices.Equal(control.Data.Queries, dynamic.Data.Queries) {
+			t.Fatalf("expanded queries differ, cannot compare: %q vs %q", control.Data.Queries, dynamic.Data.Queries)
+		}
+		standardLen := map[string]int{}
+		for _, g := range control.Data.SearchResults {
+			for _, r := range g.Results {
+				standardLen[r.URL] = len(r.Highlight)
+			}
+		}
+		paired, shorter := 0, 0
+		for _, g := range dynamic.Data.SearchResults {
+			for _, r := range g.Results {
+				if n, ok := standardLen[r.URL]; ok && n > 0 {
+					paired++
+					t.Logf("url=%s standard=%d dynamic=%d", r.URL, n, len(r.Highlight))
+					if len(r.Highlight)*2 < n {
+						shorter++
+					}
+				}
+			}
+		}
+		if paired < 2 {
+			t.Fatalf("only %d results paired by URL, cannot compare", paired)
+		}
+		if shorter == 0 {
+			t.Errorf("no paired result has a dynamic highlight under half the standard one (%d paired); result_type did not take effect", paired)
 		}
 	})
 }
@@ -434,6 +497,7 @@ func TestLiveMatrixNegative(t *testing.T) {
 		search("search query of 501 chars (max 500)", octen.SearchParams{Query: strings.Repeat("a", 501)}),
 		broad("broadSearch max_queries=0", octen.BroadSearchParams{Query: q, MaxQueries: octen.Int(0)}),
 		broad("broadSearch max_queries=31", octen.BroadSearchParams{Query: q, MaxQueries: octen.Int(31)}),
+		broad("broadSearch search_options.result_type=fancy", octen.BroadSearchParams{Query: q, MaxQueries: octen.Int(1), SearchOptions: &octen.WebSearchOptions{ResultType: octen.String("fancy")}}),
 		broad("broadSearch search_options.count=0", octen.BroadSearchParams{Query: q, MaxQueries: octen.Int(1), SearchOptions: &octen.WebSearchOptions{Count: octen.Int(0)}}),
 		news("newsSearch count=0", octen.NewsSearchParams{Query: q, Count: octen.Int(0)}),
 		news("newsSearch count=101", octen.NewsSearchParams{Query: q, Count: octen.Int(101)}),
