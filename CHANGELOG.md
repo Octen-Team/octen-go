@@ -4,7 +4,7 @@
 
 ## 0.4.1
 
-- Tests and docs for `result_type` on Web Search (`SearchParams.ResultType`) and Broad Search (`WebSearchOptions.ResultType`), which the SDK already sent. The request bodies are pinned (top level on `/search`, inside `search_options` on `/broad-search`), and the live matrix checks the `Meta.ResultType` echo, the structured 400 for an invalid Broad Search value, and that `dynamic` takes effect on Broad Search. The README shows both, and no request body changes.
+- Tests and docs for `result_type` on Web Search (`SearchParams.ResultType`) and Broad Search (`WebSearchOptions.ResultType`), which the SDK already sent. The request bodies are pinned (top level on `/search`, inside `search_options` on `/broad-search`), and the live matrix checks the `Meta.ResultType` echo on Web Search, an HTTP 400 naming `result_type` for an invalid value on both endpoints, and a pass-or-skip comparison of `standard` and `dynamic` highlights on Broad Search. The README shows both, and no request body changes.
 
 ## 0.4.0
 
