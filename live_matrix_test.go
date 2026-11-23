@@ -215,16 +215,20 @@ func TestLiveMatrixBroadSearch(t *testing.T) {
 		if !slices.Equal(control.Data.Queries, dynamic.Data.Queries) {
 			t.Skipf("queries differ, cannot compare: %q vs %q", control.Data.Queries, dynamic.Data.Queries)
 		}
+		// Pair distinct, non-empty URLs only, each at most once.
 		standard := map[string]string{}
 		for _, g := range control.Data.SearchResults {
 			for _, r := range g.Results {
-				standard[r.URL] = r.Highlight
+				if r.URL != "" {
+					standard[r.URL] = r.Highlight
+				}
 			}
 		}
 		paired, shorter := 0, 0
 		for _, g := range dynamic.Data.SearchResults {
 			for _, r := range g.Results {
 				if h, ok := standard[r.URL]; ok {
+					delete(standard, r.URL)
 					paired++
 					t.Logf("url=%s standard=%d dynamic=%d", r.URL, len(h), len(r.Highlight))
 					if len(h) > 0 && len(r.Highlight) > 0 && len(r.Highlight)*2 < len(h) {
