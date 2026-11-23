@@ -19,7 +19,7 @@ It covers eleven endpoints: Web Search, Web Search Premier, Broad Search, News S
 ## Install
 
 ```bash
-go get github.com/Octen-Team/octen-go@v0.4.0
+go get github.com/Octen-Team/octen-go@v0.4.1
 ```
 
 Create an API key in your Octen account and either pass it with `octen.WithAPIKey` or set the `OCTEN_API_KEY` environment variable. Surrounding whitespace is trimmed from the key.
@@ -76,6 +76,7 @@ ctx := context.Background()
 // Web Search: POST /search
 web, err := client.Search.Search(ctx, octen.SearchParams{
 	Query:          "rust async runtimes",
+	ResultType:     octen.String("dynamic"), // "standard" (default) or "dynamic"; see the note below
 	Count:          octen.Int(10),
 	IncludeDomains: []string{"github.com"},
 	TimeRange:      octen.String("month"),
@@ -90,8 +91,9 @@ broad, err := client.Search.BroadSearch(ctx, octen.BroadSearchParams{
 	Query:      "compare central bank rate decisions this quarter",
 	MaxQueries: octen.Int(5),
 	SearchOptions: &octen.WebSearchOptions{
-		Count:    octen.Int(5),
-		Language: []string{"en"},
+		ResultType: octen.String("dynamic"), // applies to every sub-query; the response does not echo it
+		Count:      octen.Int(5),
+		Language:   []string{"en"},
 	},
 })
 if err == nil && broad.Data != nil {
@@ -246,6 +248,8 @@ if err == nil && pages.Data != nil {
 	}
 }
 ```
+
+`ResultType` (`result_type`) on Web Search and on Broad Search's `SearchOptions` is `standard` (the default) or `dynamic`; it is case-sensitive and the SDK sends only the value you set. It determines how results are returned: `standard` returns results as the fields you set specify, while `dynamic` returns only relevant results, up to `Count`, and adjusts highlight length per result, so `Highlight.MaxTokens` may be adjusted per result. Use `standard` when you need a fixed number of results or a fixed highlight length. Web Search echoes the value used in `resp.Meta.ResultType`; Broad Search does not.
 
 Web Search Premier takes `SearchParams` and returns `*SearchResponse`, the same types as Web Search, so code written for one works with the other. Video Search is an invite-only beta; with a key that has no access the server refuses the call. In Design Search, `DesignFacts` and `Group.Master` are free-form maps decided by the server; set `Images.DesignFacts` or `Images.Snippet.Enable` to `false` to leave them out, and `Images.Enable` or `WebSearch.Enable` to `false` to skip a result list.
 
