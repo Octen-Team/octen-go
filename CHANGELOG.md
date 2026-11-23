@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.4.1
+
+- Tests and docs for `result_type` on Web Search (`SearchParams.ResultType`) and Broad Search (`WebSearchOptions.ResultType`), which the SDK already sent. The request bodies are pinned (top level on `/search`, inside `search_options` on `/broad-search`), and the live matrix checks the `Meta.ResultType` echo on Web Search, an HTTP 400 naming `result_type` for an invalid value on both endpoints, and a pass-or-skip comparison of `standard` and `dynamic` highlights on Broad Search. The README shows both, and no request body changes.
+
 ## 0.4.0
 
 Breaking: Image, Video and Design Search move from `Client.Search` to their own services, like Place Search, so the method layout matches the Python and TypeScript SDKs. The requests sent, the parameters and the responses are unchanged; only the call sites change. The old methods are removed.
