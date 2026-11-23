@@ -212,8 +212,8 @@ func TestLiveMatrixBroadSearch(t *testing.T) {
 			return res
 		}
 		control, dynamic := call("standard"), call("dynamic")
-		if !slices.Equal(control.Data.Queries, dynamic.Data.Queries) {
-			t.Skipf("queries differ, cannot compare: %q vs %q", control.Data.Queries, dynamic.Data.Queries)
+		if len(control.Data.Queries) == 0 || !slices.Equal(control.Data.Queries, dynamic.Data.Queries) {
+			t.Skipf("queries missing or differ, cannot compare: %q vs %q", control.Data.Queries, dynamic.Data.Queries)
 		}
 		// Pair distinct, non-empty URLs only, each at most once.
 		standard := map[string]string{}
