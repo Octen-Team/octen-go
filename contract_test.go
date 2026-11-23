@@ -405,7 +405,11 @@ func TestDescriberShapeRules(t *testing.T) {
 
 // Every SDK method must be covered by contractCases, and nothing else may be listed there.
 func TestContractCoversEverySDKMethod(t *testing.T) {
-	n := reflect.TypeOf(&SearchService{}).NumMethod() + reflect.TypeOf(&PlaceSearchService{}).NumMethod() + reflect.TypeOf(&ExtractService{}).NumMethod()
+	// Counts the methods of every service on Client, so a new service cannot be left out.
+	n := 0
+	for ct, i := reflect.TypeOf(Client{}), 0; i < ct.NumField(); i++ {
+		n += ct.Field(i).Type.NumMethod()
+	}
 	if n != len(endpointCalls) {
 		t.Fatalf("SDK has %d methods but endpointCalls lists %d; add the new method to both tables", n, len(endpointCalls))
 	}

@@ -146,13 +146,13 @@ func ExampleSearchService_SearchPremier() {
 	// Output: dynamic https://example.eu/ai-act
 }
 
-func ExampleSearchService_ImageSearch() {
+func ExampleImageSearchService_Search() {
 	srv := fakeAPI(200, `{"code":0,"request_id":"req-i","data":{"results":[{"title":"Golden retriever","url":"https://example.com/dog.jpg","width":1024,"height":683}]}}`)
 	defer srv.Close()
 	client := newExampleClient(srv)
 
 	// One input per call: a text query, or {Type: "image", URL: octen.String("https://...")}.
-	resp, err := client.Search.ImageSearch(context.Background(), octen.ImageSearchParams{
+	resp, err := client.ImageSearch.Search(context.Background(), octen.ImageSearchParams{
 		Inputs: []octen.ImageSearchInput{{Type: "text", Data: octen.String("golden retriever")}},
 		Count:  octen.Int(1),
 	})
@@ -164,12 +164,12 @@ func ExampleSearchService_ImageSearch() {
 	// Output: Golden retriever 1024 683
 }
 
-func ExampleSearchService_VideoSearch() {
+func ExampleVideoSearchService_Search() {
 	srv := fakeAPI(200, `{"code":0,"request_id":"req-v","data":{"results":[{"title":"Bowline knot","url":"https://example.com/watch","duration_seconds":78}]}}`)
 	defer srv.Close()
 	client := newExampleClient(srv)
 
-	resp, err := client.Search.VideoSearch(context.Background(), octen.VideoSearchParams{
+	resp, err := client.VideoSearch.Search(context.Background(), octen.VideoSearchParams{
 		Inputs: []octen.VideoSearchInput{{Type: "text", Data: octen.String("how to tie a bowline")}},
 		Count:  octen.Int(1),
 	})
@@ -181,12 +181,12 @@ func ExampleSearchService_VideoSearch() {
 	// Output: Bowline knot 78
 }
 
-func ExampleSearchService_DesignSearch() {
+func ExampleDesignSearchService_Search() {
 	srv := fakeAPI(200, `{"code":0,"request_id":"req-d","data":{"query":"pitch deck slide","images":[{"type":"slide","url":"https://example.com/s.png","group":{"group_id":"deck_1","type":"deck","position":19,"total":28}}],"results":[]}}`)
 	defer srv.Close()
 	client := newExampleClient(srv)
 
-	resp, err := client.Search.DesignSearch(context.Background(), octen.DesignSearchParams{
+	resp, err := client.DesignSearch.Search(context.Background(), octen.DesignSearchParams{
 		Query:     octen.String("pitch deck slide"),
 		Images:    &octen.DesignImageOptions{Count: octen.Int(1)},
 		WebSearch: &octen.DesignWebSearchOptions{Enable: octen.Bool(false)},

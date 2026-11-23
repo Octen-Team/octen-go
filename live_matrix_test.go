@@ -331,7 +331,7 @@ func TestLiveMatrixDesignSearch(t *testing.T) {
 	design := func(t *testing.T, p octen.DesignSearchParams) *octen.DesignSearchData {
 		t.Helper()
 		start := time.Now()
-		res, err := c.Search.DesignSearch(liveContext(t), p)
+		res, err := c.DesignSearch.Search(liveContext(t), p)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -407,13 +407,13 @@ func TestLiveMatrixNegative(t *testing.T) {
 		return negCase{name, func(ctx context.Context) error { _, err := c.Search.SearchPremier(ctx, p); return err }}
 	}
 	image := func(name string, p octen.ImageSearchParams) negCase {
-		return negCase{name, func(ctx context.Context) error { _, err := c.Search.ImageSearch(ctx, p); return err }}
+		return negCase{name, func(ctx context.Context) error { _, err := c.ImageSearch.Search(ctx, p); return err }}
 	}
 	video := func(name string, p octen.VideoSearchParams) negCase {
-		return negCase{name, func(ctx context.Context) error { _, err := c.Search.VideoSearch(ctx, p); return err }}
+		return negCase{name, func(ctx context.Context) error { _, err := c.VideoSearch.Search(ctx, p); return err }}
 	}
 	design := func(name string, p octen.DesignSearchParams) negCase {
-		return negCase{name, func(ctx context.Context) error { _, err := c.Search.DesignSearch(ctx, p); return err }}
+		return negCase{name, func(ctx context.Context) error { _, err := c.DesignSearch.Search(ctx, p); return err }}
 	}
 	textImage := []octen.ImageSearchInput{{Type: "text", Data: octen.String(q)}}
 	textVideo := []octen.VideoSearchInput{{Type: "text", Data: octen.String(q)}}
@@ -528,10 +528,10 @@ func TestLiveMatrixLocalValidation(t *testing.T) {
 		name, field string
 		run         func() error
 	}{
-		{"imageSearch_no_input", "inputs", func() error { _, err := c.Search.ImageSearch(ctx, octen.ImageSearchParams{}); return err }},
-		{"videoSearch_no_input", "inputs", func() error { _, err := c.Search.VideoSearch(ctx, octen.VideoSearchParams{}); return err }},
+		{"imageSearch_no_input", "inputs", func() error { _, err := c.ImageSearch.Search(ctx, octen.ImageSearchParams{}); return err }},
+		{"videoSearch_no_input", "inputs", func() error { _, err := c.VideoSearch.Search(ctx, octen.VideoSearchParams{}); return err }},
 		{"designSearch_no_query_or_group", "query", func() error {
-			_, err := c.Search.DesignSearch(ctx, octen.DesignSearchParams{Images: &octen.DesignImageOptions{GroupID: octen.String(" ")}})
+			_, err := c.DesignSearch.Search(ctx, octen.DesignSearchParams{Images: &octen.DesignImageOptions{GroupID: octen.String(" ")}})
 			return err
 		}},
 	}
@@ -843,7 +843,7 @@ func TestLiveMatrixImageSearchParams(t *testing.T) {
 	image := func(t *testing.T, p octen.ImageSearchParams) []octen.ImageSearchResult {
 		t.Helper()
 		start := time.Now()
-		res, err := c.Search.ImageSearch(liveContext(t), p)
+		res, err := c.ImageSearch.Search(liveContext(t), p)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -893,7 +893,7 @@ func TestLiveMatrixVideoSearchParams(t *testing.T) {
 	video := func(t *testing.T, p octen.VideoSearchParams) []octen.VideoSearchResult {
 		t.Helper()
 		start := time.Now()
-		res, err := c.Search.VideoSearch(liveContext(t), p)
+		res, err := c.VideoSearch.Search(liveContext(t), p)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -932,7 +932,7 @@ func TestLiveMatrixDesignSearchParams(t *testing.T) {
 	design := func(t *testing.T, p octen.DesignSearchParams) *octen.DesignSearchData {
 		t.Helper()
 		start := time.Now()
-		res, err := c.Search.DesignSearch(liveContext(t), p)
+		res, err := c.DesignSearch.Search(liveContext(t), p)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1144,7 +1144,7 @@ func TestLiveMatrixVideoSearchStartEnd(t *testing.T) {
 	checkStartEnd(t, "time_published", videoTimeRule, from, to, func(t *testing.T, start, end *string) []datedResult {
 		t.Helper()
 		begin := time.Now()
-		res, err := c.Search.VideoSearch(liveContext(t), octen.VideoSearchParams{Count: octen.Int(5), StartTime: start, EndTime: end,
+		res, err := c.VideoSearch.Search(liveContext(t), octen.VideoSearchParams{Count: octen.Int(5), StartTime: start, EndTime: end,
 			Inputs: []octen.VideoSearchInput{{Type: "text", Data: octen.String("SpaceX rocket launch")}}})
 		if err != nil {
 			t.Fatal(err)
@@ -1166,7 +1166,7 @@ func TestLiveMatrixDesignSearchStartEnd(t *testing.T) {
 	checkStartEnd(t, "time_published", timeBasisRule, from, to, func(t *testing.T, start, end *string) []datedResult {
 		t.Helper()
 		begin := time.Now()
-		res, err := c.Search.DesignSearch(liveContext(t), octen.DesignSearchParams{Query: octen.String("SaaS pricing page"),
+		res, err := c.DesignSearch.Search(liveContext(t), octen.DesignSearchParams{Query: octen.String("SaaS pricing page"),
 			Images:    &octen.DesignImageOptions{Enable: octen.Bool(false)},
 			WebSearch: &octen.DesignWebSearchOptions{Count: octen.Int(5), TimeBasis: octen.String("published"), StartTime: start, EndTime: end}})
 		if err != nil {

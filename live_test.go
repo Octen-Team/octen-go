@@ -126,7 +126,7 @@ func TestLivePlaceSearch(t *testing.T) {
 // Searching by a well-known Commons photo finds that photo again, which a text query for "cat" need not.
 func TestLiveImageSearchByURL(t *testing.T) {
 	c := liveClient(t)
-	res, err := c.Search.ImageSearch(liveContext(t), octen.ImageSearchParams{
+	res, err := c.ImageSearch.Search(liveContext(t), octen.ImageSearchParams{
 		Inputs: []octen.ImageSearchInput{{Type: "image", URL: octen.String("https://upload.wikimedia.org/wikipedia/commons/a/a3/June_odd-eyed-cat.jpg")}},
 		Count:  octen.Int(2),
 	})
@@ -164,7 +164,7 @@ func TestLiveImageSearchByBase64(t *testing.T) {
 		t.Fatalf("download test image: status %d, %d bytes, err %v", resp.StatusCode, len(img), err)
 	}
 	t.Logf("image_bytes=%d", len(img))
-	res, err := c.Search.ImageSearch(ctx, octen.ImageSearchParams{
+	res, err := c.ImageSearch.Search(ctx, octen.ImageSearchParams{
 		Inputs: []octen.ImageSearchInput{{Type: "image", Data: octen.String(base64.StdEncoding.EncodeToString(img))}},
 		Count:  octen.Int(2),
 	})

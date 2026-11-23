@@ -19,7 +19,7 @@ It covers eleven endpoints: Web Search, Web Search Premier, Broad Search, News S
 ## Install
 
 ```bash
-go get github.com/Octen-Team/octen-go@v0.3.0
+go get github.com/Octen-Team/octen-go@v0.4.0
 ```
 
 Create an API key in your Octen account and either pass it with `octen.WithAPIKey` or set the `OCTEN_API_KEY` environment variable. Surrounding whitespace is trimmed from the key.
@@ -152,7 +152,7 @@ if err == nil && pulse.Meta != nil && pulse.Meta.Usage != nil {
 	fmt.Println(pulse.Meta.Usage.BilledMode)
 }
 
-// Place Search: POST /place-search (note: client.PlaceSearch, not client.Search)
+// Place Search: POST /place-search (its own service, like Image, Video and Design Search below)
 places, err := client.PlaceSearch.Search(ctx, octen.PlaceSearchParams{
 	Query:     "Korean restaurants",
 	Places:    &octen.PlaceCardOptions{Count: octen.Int(5)},
@@ -178,7 +178,7 @@ if err == nil && premier.Meta != nil && premier.Data != nil {
 }
 
 // Image Search: POST /image-search (exactly one input: a text query, or an image as a URL or base64 data)
-images, err := client.Search.ImageSearch(ctx, octen.ImageSearchParams{
+images, err := client.ImageSearch.Search(ctx, octen.ImageSearchParams{
 	Inputs: []octen.ImageSearchInput{{Type: "image", URL: octen.String("https://example.com/photo.jpg")}},
 	// or an uploaded image: {Type: "image", Data: octen.String(base64.StdEncoding.EncodeToString(jpegBytes))}
 	// or a text query:      {Type: "text", Data: octen.String("golden retriever puppy")}
@@ -191,7 +191,7 @@ if err == nil && images.Data != nil {
 }
 
 // Video Search: POST /video-search (invite-only beta: contact Octen for access)
-videos, err := client.Search.VideoSearch(ctx, octen.VideoSearchParams{
+videos, err := client.VideoSearch.Search(ctx, octen.VideoSearchParams{
 	Inputs:    []octen.VideoSearchInput{{Type: "text", Data: octen.String("how to tie a bowline knot")}},
 	Count:     octen.Int(3),
 	TimeRange: octen.String("year"),
@@ -203,7 +203,7 @@ if err == nil && videos.Data != nil {
 }
 
 // Design Search: POST /design-search (design references as image results, plus web results)
-design, err := client.Search.DesignSearch(ctx, octen.DesignSearchParams{
+design, err := client.DesignSearch.Search(ctx, octen.DesignSearchParams{
 	Query:     octen.String("SaaS landing page hero section"),
 	Images:    &octen.DesignImageOptions{Count: octen.Int(5), Snippet: &octen.DesignSnippetOptions{MaxTokens: octen.Int(2000)}},
 	WebSearch: &octen.DesignWebSearchOptions{Count: octen.Int(3)},
@@ -213,7 +213,7 @@ if err == nil && design.Data != nil {
 		fmt.Println(img.Type, img.URL, img.DesignFacts)
 		if img.Group != nil {
 			// The rest of the page or deck, in order (Position runs from 1 to Total):
-			// client.Search.DesignSearch(ctx, octen.DesignSearchParams{
+			// client.DesignSearch.Search(ctx, octen.DesignSearchParams{
 			//	Images: &octen.DesignImageOptions{GroupID: octen.String(img.Group.GroupID)}})
 			fmt.Println(img.Group.Name, img.Group.Position, img.Group.Total)
 		}

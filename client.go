@@ -20,11 +20,16 @@ const (
 // Client is the entry point of the SDK. It is safe for concurrent use; create it with
 // NewClient, because the zero value is not usable.
 type Client struct {
-	// Search serves the web, Web Search Premier, broad, news, business, Pulse, image, video
-	// and design search endpoints.
+	// Search serves the web, Web Search Premier, broad, news, business and Pulse search endpoints.
 	Search *SearchService
 	// PlaceSearch serves the place search endpoint.
 	PlaceSearch *PlaceSearchService
+	// ImageSearch serves the image search endpoint.
+	ImageSearch *ImageSearchService
+	// VideoSearch serves the video search endpoint, an invite-only beta.
+	VideoSearch *VideoSearchService
+	// DesignSearch serves the design search endpoint.
+	DesignSearch *DesignSearchService
 	// Extract serves the Extract endpoint, which returns the content of 1 to 20 URLs per call.
 	Extract *ExtractService
 }
@@ -56,7 +61,14 @@ func NewClient(opts ...Option) (*Client, error) {
 		transport: newTransport(cfg.baseURL, key, cfg.headers, cfg.httpClient, cfg.maxRetries),
 		timeout:   cfg.timeout,
 	}
-	return &Client{Search: &SearchService{c: c}, PlaceSearch: &PlaceSearchService{c: c}, Extract: &ExtractService{c: c}}, nil
+	return &Client{
+		Search:       &SearchService{c: c},
+		PlaceSearch:  &PlaceSearchService{c: c},
+		ImageSearch:  &ImageSearchService{c: c},
+		VideoSearch:  &VideoSearchService{c: c},
+		DesignSearch: &DesignSearchService{c: c},
+		Extract:      &ExtractService{c: c},
+	}, nil
 }
 
 // core is what the services share: the transport and the client timeout, 0 when not set.

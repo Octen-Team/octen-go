@@ -128,21 +128,21 @@ func TestEndpointPathsAndBodies(t *testing.T) {
 			return r.RequestID, r.RawJSON(), nil
 		}},
 		{"image", "/image-search", `{"inputs":[{"type":"text","data":"q"}],"count":3}`, func() (string, []byte, error) {
-			r, err := c.Search.ImageSearch(ctx, ImageSearchParams{Inputs: []ImageSearchInput{{Type: "text", Data: String("q")}}, Count: count})
+			r, err := c.ImageSearch.Search(ctx, ImageSearchParams{Inputs: []ImageSearchInput{{Type: "text", Data: String("q")}}, Count: count})
 			if err != nil {
 				return "", nil, err
 			}
 			return r.RequestID, r.RawJSON(), nil
 		}},
 		{"video", "/video-search", `{"inputs":[{"type":"text","data":"q"}],"count":3}`, func() (string, []byte, error) {
-			r, err := c.Search.VideoSearch(ctx, VideoSearchParams{Inputs: []VideoSearchInput{{Type: "text", Data: String("q")}}, Count: count})
+			r, err := c.VideoSearch.Search(ctx, VideoSearchParams{Inputs: []VideoSearchInput{{Type: "text", Data: String("q")}}, Count: count})
 			if err != nil {
 				return "", nil, err
 			}
 			return r.RequestID, r.RawJSON(), nil
 		}},
 		{"design", "/design-search", `{"query":"q","images":{"count":3}}`, func() (string, []byte, error) {
-			r, err := c.Search.DesignSearch(ctx, DesignSearchParams{Query: String("q"), Images: &DesignImageOptions{Count: count}})
+			r, err := c.DesignSearch.Search(ctx, DesignSearchParams{Query: String("q"), Images: &DesignImageOptions{Count: count}})
 			if err != nil {
 				return "", nil, err
 			}
@@ -232,49 +232,49 @@ func TestValidationSendsNothing(t *testing.T) {
 			_, err := c.PlaceSearch.Search(ctx, PlaceSearchParams{Query: "q", Longitude: Float64(math.Inf(1))})
 			return err
 		}}, {"premier blank", "query", func() error { _, err := c.Search.SearchPremier(ctx, SearchParams{Query: " "}); return err }},
-		{"image no inputs", "inputs", func() error { _, err := c.Search.ImageSearch(ctx, ImageSearchParams{}); return err }},
+		{"image no inputs", "inputs", func() error { _, err := c.ImageSearch.Search(ctx, ImageSearchParams{}); return err }},
 		{"image two inputs", "inputs", func() error {
-			_, err := c.Search.ImageSearch(ctx, ImageSearchParams{Inputs: []ImageSearchInput{
+			_, err := c.ImageSearch.Search(ctx, ImageSearchParams{Inputs: []ImageSearchInput{
 				{Type: "text", Data: String("cats")}, {Type: "image", URL: String("https://example.com/a.jpg")},
 			}})
 			return err
 		}},
 		{"image blank text", "inputs[0].data", func() error {
-			_, err := c.Search.ImageSearch(ctx, ImageSearchParams{Inputs: []ImageSearchInput{{Type: "text", Data: String(" ")}}})
+			_, err := c.ImageSearch.Search(ctx, ImageSearchParams{Inputs: []ImageSearchInput{{Type: "text", Data: String(" ")}}})
 			return err
 		}},
 		{"image without url or data", "inputs[0]", func() error {
-			_, err := c.Search.ImageSearch(ctx, ImageSearchParams{Inputs: []ImageSearchInput{{Type: "image"}}})
+			_, err := c.ImageSearch.Search(ctx, ImageSearchParams{Inputs: []ImageSearchInput{{Type: "image"}}})
 			return err
 		}},
 		{"image url and data", "inputs[0]", func() error {
-			_, err := c.Search.ImageSearch(ctx, ImageSearchParams{Inputs: []ImageSearchInput{{Type: "image", URL: String("https://example.com/a.jpg"), Data: String("aGVsbG8=")}}})
+			_, err := c.ImageSearch.Search(ctx, ImageSearchParams{Inputs: []ImageSearchInput{{Type: "image", URL: String("https://example.com/a.jpg"), Data: String("aGVsbG8=")}}})
 			return err
 		}},
 		{"image text with url", "inputs[0].url", func() error {
-			_, err := c.Search.ImageSearch(ctx, ImageSearchParams{Inputs: []ImageSearchInput{{Type: "text", Data: String("cats"), URL: String("https://example.com/a.jpg")}}})
+			_, err := c.ImageSearch.Search(ctx, ImageSearchParams{Inputs: []ImageSearchInput{{Type: "text", Data: String("cats"), URL: String("https://example.com/a.jpg")}}})
 			return err
 		}},
 		{"image unknown type", "inputs[0].type", func() error {
-			_, err := c.Search.ImageSearch(ctx, ImageSearchParams{Inputs: []ImageSearchInput{{Type: "video", URL: String("https://example.com/a.mp4")}}})
+			_, err := c.ImageSearch.Search(ctx, ImageSearchParams{Inputs: []ImageSearchInput{{Type: "video", URL: String("https://example.com/a.mp4")}}})
 			return err
 		}},
 		{"video image type", "inputs[0].type", func() error {
-			_, err := c.Search.VideoSearch(ctx, VideoSearchParams{Inputs: []VideoSearchInput{{Type: "image", Data: String("knots")}}})
+			_, err := c.VideoSearch.Search(ctx, VideoSearchParams{Inputs: []VideoSearchInput{{Type: "image", Data: String("knots")}}})
 			return err
 		}},
-		{"video no inputs", "inputs", func() error { _, err := c.Search.VideoSearch(ctx, VideoSearchParams{}); return err }},
+		{"video no inputs", "inputs", func() error { _, err := c.VideoSearch.Search(ctx, VideoSearchParams{}); return err }},
 		{"video two inputs", "inputs", func() error {
-			_, err := c.Search.VideoSearch(ctx, VideoSearchParams{Inputs: []VideoSearchInput{{Type: "text", Data: String("a")}, {Type: "text", Data: String("b")}}})
+			_, err := c.VideoSearch.Search(ctx, VideoSearchParams{Inputs: []VideoSearchInput{{Type: "text", Data: String("a")}, {Type: "text", Data: String("b")}}})
 			return err
 		}},
 		{"video blank text", "inputs[0].data", func() error {
-			_, err := c.Search.VideoSearch(ctx, VideoSearchParams{Inputs: []VideoSearchInput{{Type: "text"}}})
+			_, err := c.VideoSearch.Search(ctx, VideoSearchParams{Inputs: []VideoSearchInput{{Type: "text"}}})
 			return err
 		}},
-		{"design nothing", "query", func() error { _, err := c.Search.DesignSearch(ctx, DesignSearchParams{}); return err }},
+		{"design nothing", "query", func() error { _, err := c.DesignSearch.Search(ctx, DesignSearchParams{}); return err }},
 		{"design blank query and group", "query", func() error {
-			_, err := c.Search.DesignSearch(ctx, DesignSearchParams{Query: String(" "), Images: &DesignImageOptions{GroupID: String("")}})
+			_, err := c.DesignSearch.Search(ctx, DesignSearchParams{Query: String(" "), Images: &DesignImageOptions{GroupID: String("")}})
 			return err
 		}},
 	}
@@ -427,7 +427,7 @@ func TestNewEndpointsSendEveryParameter(t *testing.T) {
 		{"image by url", "/image-search",
 			`{"inputs":[{"type":"image","url":"https://example.com/cat.jpg"}],"count":4,"include_domains":["inc.example"],"exclude_domains":["exc.example"],"safesearch":"off"}`,
 			func() error {
-				_, err := c.Search.ImageSearch(ctx, ImageSearchParams{
+				_, err := c.ImageSearch.Search(ctx, ImageSearchParams{
 					Inputs: []ImageSearchInput{{Type: "image", URL: String("https://example.com/cat.jpg")}},
 					Count:  Int(4), IncludeDomains: []string{"inc.example"}, ExcludeDomains: []string{"exc.example"}, Safesearch: String("off"),
 				})
@@ -435,18 +435,18 @@ func TestNewEndpointsSendEveryParameter(t *testing.T) {
 			}},
 		{"image by base64 data", "/image-search", `{"inputs":[{"type":"image","data":"aGVsbG8="}]}`,
 			func() error {
-				_, err := c.Search.ImageSearch(ctx, ImageSearchParams{Inputs: []ImageSearchInput{{Type: "image", Data: String("aGVsbG8=")}}})
+				_, err := c.ImageSearch.Search(ctx, ImageSearchParams{Inputs: []ImageSearchInput{{Type: "image", Data: String("aGVsbG8=")}}})
 				return err
 			}},
 		{"image by text, defaults not sent", "/image-search", `{"inputs":[{"type":"text","data":"cats"}]}`,
 			func() error {
-				_, err := c.Search.ImageSearch(ctx, ImageSearchParams{Inputs: []ImageSearchInput{{Type: "text", Data: String("cats")}}})
+				_, err := c.ImageSearch.Search(ctx, ImageSearchParams{Inputs: []ImageSearchInput{{Type: "text", Data: String("cats")}}})
 				return err
 			}},
 		{"video", "/video-search",
 			`{"inputs":[{"type":"text","data":"knots"}],"count":6,"time_range":"m","start_time":"2025-01-01T00:00:00Z","end_time":"2025-06-01T00:00:00Z","safesearch":"off"}`,
 			func() error {
-				_, err := c.Search.VideoSearch(ctx, VideoSearchParams{
+				_, err := c.VideoSearch.Search(ctx, VideoSearchParams{
 					Inputs: []VideoSearchInput{{Type: "text", Data: String("knots")}}, Count: Int(6), TimeRange: String("m"),
 					StartTime: String("2025-01-01T00:00:00Z"), EndTime: String("2025-06-01T00:00:00Z"), Safesearch: String("off"),
 				})
@@ -454,7 +454,7 @@ func TestNewEndpointsSendEveryParameter(t *testing.T) {
 			}},
 		{"video minimal", "/video-search", `{"inputs":[{"type":"text","data":"knots"}]}`,
 			func() error {
-				_, err := c.Search.VideoSearch(ctx, VideoSearchParams{Inputs: []VideoSearchInput{{Type: "text", Data: String("knots")}}})
+				_, err := c.VideoSearch.Search(ctx, VideoSearchParams{Inputs: []VideoSearchInput{{Type: "text", Data: String("knots")}}})
 				return err
 			}},
 		{"design", "/design-search",
@@ -463,7 +463,7 @@ func TestNewEndpointsSendEveryParameter(t *testing.T) {
 				`"include_domains":["inc.example"],"exclude_domains":["exc.example"],"language":["fr"],"time_basis":"crawled","time_range":"y",` +
 				`"start_time":"2024-01-01T00:00:00Z","end_time":"2024-12-31T00:00:00Z"}}`,
 			func() error {
-				_, err := c.Search.DesignSearch(ctx, DesignSearchParams{
+				_, err := c.DesignSearch.Search(ctx, DesignSearchParams{
 					Query: String("hero"),
 					Images: &DesignImageOptions{Enable: Bool(true), Count: Int(3), DesignFacts: Bool(false),
 						Snippet: &DesignSnippetOptions{Enable: Bool(true), MaxTokens: Int(333)}, GroupID: String("pg_1")},
@@ -478,12 +478,12 @@ func TestNewEndpointsSendEveryParameter(t *testing.T) {
 			}},
 		{"design group only, no query sent", "/design-search", `{"images":{"group_id":"pg_1"}}`,
 			func() error {
-				_, err := c.Search.DesignSearch(ctx, DesignSearchParams{Images: &DesignImageOptions{GroupID: String("pg_1")}})
+				_, err := c.DesignSearch.Search(ctx, DesignSearchParams{Images: &DesignImageOptions{GroupID: String("pg_1")}})
 				return err
 			}},
 		{"design query only", "/design-search", `{"query":"hero"}`,
 			func() error {
-				_, err := c.Search.DesignSearch(ctx, DesignSearchParams{Query: String("hero")})
+				_, err := c.DesignSearch.Search(ctx, DesignSearchParams{Query: String("hero")})
 				return err
 			}},
 	}

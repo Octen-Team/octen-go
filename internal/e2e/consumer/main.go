@@ -69,19 +69,19 @@ func main() {
 	}
 	fmt.Println("OK search-premier", premier.RequestID)
 
-	img, err := client.Search.ImageSearch(ctx, octen.ImageSearchParams{Inputs: []octen.ImageSearchInput{{Type: "text", Data: octen.String("q")}}})
+	img, err := client.ImageSearch.Search(ctx, octen.ImageSearchParams{Inputs: []octen.ImageSearchInput{{Type: "text", Data: octen.String("q")}}})
 	if err != nil || img.RequestID != "rid-image-search" || img.Data == nil || len(img.Data.Results) != 1 || img.Data.Results[0].Width != 10 {
 		fail("ImageSearch: %+v %v", img, err)
 	}
 	fmt.Println("OK image-search", img.RequestID)
 
-	video, err := client.Search.VideoSearch(ctx, octen.VideoSearchParams{Inputs: []octen.VideoSearchInput{{Type: "text", Data: octen.String("q")}}})
+	video, err := client.VideoSearch.Search(ctx, octen.VideoSearchParams{Inputs: []octen.VideoSearchInput{{Type: "text", Data: octen.String("q")}}})
 	if err != nil || video.RequestID != "rid-video-search" || video.Data == nil || len(video.Data.Results) != 1 || video.Data.Results[0].DurationSeconds != 78 {
 		fail("VideoSearch: %+v %v", video, err)
 	}
 	fmt.Println("OK video-search", video.RequestID)
 
-	design, err := client.Search.DesignSearch(ctx, octen.DesignSearchParams{Images: &octen.DesignImageOptions{GroupID: octen.String("g")}})
+	design, err := client.DesignSearch.Search(ctx, octen.DesignSearchParams{Images: &octen.DesignImageOptions{GroupID: octen.String("g")}})
 	if err != nil || design.RequestID != "rid-design-search" || design.Data == nil || len(design.Data.Images) != 1 ||
 		design.Data.Images[0].Group == nil || design.Data.Images[0].Group.Position != 1 {
 		fail("DesignSearch: %+v %v", design, err)

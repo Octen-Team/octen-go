@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.4.0
+
+Breaking: Image, Video and Design Search move from `Client.Search` to their own services, like Place Search, so the method layout matches the Python and TypeScript SDKs. The requests sent, the parameters and the responses are unchanged; only the call sites change. The old methods are removed.
+
+| Before | Now |
+|---|---|
+| `client.Search.ImageSearch(ctx, params)` | `client.ImageSearch.Search(ctx, params)` |
+| `client.Search.VideoSearch(ctx, params)` | `client.VideoSearch.Search(ctx, params)` |
+| `client.Search.DesignSearch(ctx, params)` | `client.DesignSearch.Search(ctx, params)` |
+
 ## 0.3.0
 
 - `Extract.Extract` (`POST /extract`) with `ExtractParams` and `*ExtractResponse`, checked against the public OpenAPI spec. Results are per URL (`Status`, `ErrorMessage`, `ResolvedMode`), and `Meta.Usage.SuccessfulByMode` gives what the call is billed for. `IncludeLinks: &octen.ExtractLinksOptions{}` is sent as `{}` and uses the server defaults.
