@@ -213,7 +213,7 @@ func TestConsumerModule(t *testing.T) {
 		t.Fatalf("server saw %d requests, want %d: %+v", len(got), len(wantPaths), got)
 	}
 	for i, r := range got {
-		if r.path != wantPaths[i] || r.key != "e2e-key" || r.agent != "octen-go-sdk/0.3.0" {
+		if r.path != wantPaths[i] || r.key != "e2e-key" || r.agent != "octen-go-sdk/0.4.0" {
 			t.Errorf("request %d = %+v, want path %s with the SDK key and user agent", i, r, wantPaths[i])
 		}
 	}

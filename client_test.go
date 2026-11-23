@@ -184,15 +184,15 @@ var endpointCalls = []endpointCall{
 		return err
 	}},
 	{"/image-search", 30 * time.Second, func(c *Client, o ...RequestOption) error {
-		_, err := c.Search.ImageSearch(context.Background(), ImageSearchParams{Inputs: []ImageSearchInput{{Type: "text", Data: String("q")}}}, o...)
+		_, err := c.ImageSearch.Search(context.Background(), ImageSearchParams{Inputs: []ImageSearchInput{{Type: "text", Data: String("q")}}}, o...)
 		return err
 	}},
 	{"/video-search", 30 * time.Second, func(c *Client, o ...RequestOption) error {
-		_, err := c.Search.VideoSearch(context.Background(), VideoSearchParams{Inputs: []VideoSearchInput{{Type: "text", Data: String("q")}}}, o...)
+		_, err := c.VideoSearch.Search(context.Background(), VideoSearchParams{Inputs: []VideoSearchInput{{Type: "text", Data: String("q")}}}, o...)
 		return err
 	}},
 	{"/design-search", 30 * time.Second, func(c *Client, o ...RequestOption) error {
-		_, err := c.Search.DesignSearch(context.Background(), DesignSearchParams{Query: String("q")}, o...)
+		_, err := c.DesignSearch.Search(context.Background(), DesignSearchParams{Query: String("q")}, o...)
 		return err
 	}},
 	{"/extract", 120 * time.Second, func(c *Client, o ...RequestOption) error {
