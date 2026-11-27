@@ -33,6 +33,7 @@ var contractCases = []contractCase{
 	{"/video-search", "VideoSearchRequest", reflect.TypeOf(VideoSearchParams{}), "VideoSearchResponse", reflect.TypeOf(VideoSearchResponse{})},
 	{"/design-search", "DesignSearchRequest", reflect.TypeOf(DesignSearchParams{}), "DesignSearchResponse", reflect.TypeOf(DesignSearchResponse{})},
 	{"/extract", "ExtractRequest", reflect.TypeOf(ExtractParams{}), "ExtractResponse", reflect.TypeOf(ExtractResponse{})},
+	{"/embedding", "EmbeddingRequest", reflect.TypeOf(EmbeddingParams{}), "EmbeddingResponse", reflect.TypeOf(EmbeddingResponse{})},
 }
 
 // goUnion describes a Go type that decodes a discriminated OpenAPI oneOf.
