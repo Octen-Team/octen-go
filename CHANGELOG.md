@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.5.0
+
+- New services: `Client.Embedding` (`Create`, `POST /embedding`) and `Client.VLEmbedding` (`Create`, `POST /vl-embedding`), with request and response types checked against the public OpenAPI spec. `TextContent`, `ImageContent` and `VideoContent` build VL content items.
+- Local checks: Embedding's `Input` must hold 1 to 1000 non-blank strings; VL Embedding's `Model` must be non-blank and its `Input.Contents` must hold 1 to 20 items, each with exactly one non-blank `Text`, `Image` or `Video`. Image and video counts, `Dimension` and `FPS` are left to the server, as other ranges are.
+- Both use the client's default timeout (30 s). A long video can take longer: pass `WithRequestTimeout` for that call.
+- `specdrift` now also covers the two endpoints, including the `input` item limit and the VL contents limit.
+
 ## 0.4.1
 
 - Tests and docs for `result_type` on Web Search (`SearchParams.ResultType`) and Broad Search (`WebSearchOptions.ResultType`), which the SDK already sent. The request bodies are pinned (top level on `/search`, inside `search_options` on `/broad-search`), and the live matrix checks the `Meta.ResultType` echo on Web Search, an HTTP 400 naming `result_type` for an invalid value on both endpoints, and a pass-or-skip comparison of `standard` and `dynamic` highlights on Broad Search. The README shows both, and no request body changes.

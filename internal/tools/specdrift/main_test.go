@@ -51,8 +51,8 @@ func TestIdenticalSpecsExitZero(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit %d, stderr: %s", code, errOut)
 	}
-	if !strings.Contains(out, "22 request/response schemas") {
-		t.Errorf("stdout = %q, want the count of 22 compared schemas", out)
+	if !strings.Contains(out, "26 request/response schemas") {
+		t.Errorf("stdout = %q, want the count of 26 compared schemas", out)
 	}
 }
 
@@ -66,6 +66,10 @@ func TestChangeInAddedEndpointIsDrift(t *testing.T) {
 		"SearchResponse":      "/search-premier response",
 		"ExtractRequest":      "/extract request",
 		"ExtractResult":       "/extract response",
+		"EmbeddingRequest":    "/embedding request",
+		"EmbeddingResult":     "/embedding response",
+		"VLEmbeddingContent":  "/vl-embedding request",
+		"VLEmbeddingUsage":    "/vl-embedding response",
 	} {
 		code, _, errOut := runWith(t, mutated(t, schema), snapshotPath)
 		if code != 1 || !strings.Contains(errOut, want) || !strings.Contains(errOut, "brand_new_field") {
@@ -106,7 +110,7 @@ func TestUnusableInputExitsTwo(t *testing.T) {
 
 // Schemas outside the watched endpoints change often and must not raise the alarm.
 func TestChangeOutsideTheWatchedEndpointsIsIgnored(t *testing.T) {
-	if code, _, errOut := runWith(t, mutated(t, "EmbeddingRequest"), snapshotPath); code != 0 {
+	if code, _, errOut := runWith(t, mutated(t, "AnswerRequest"), snapshotPath); code != 0 {
 		t.Fatalf("exit %d, want 0; stderr: %s", code, errOut)
 	}
 }
@@ -208,6 +212,27 @@ func TestInputsItemCountChangeIsDrift(t *testing.T) {
 		code, _, errOut := runWith(t, live, snapshotPath)
 		if code != 1 || !strings.Contains(errOut, c.want) || !strings.Contains(errOut, "maxItems") {
 			t.Errorf("%s: exit %d, want 1 naming %q with the item bounds; stderr: %s", c.schema, code, c.want, errOut)
+		}
+	}
+}
+
+// The SDK checks 1 to 1000 Embedding inputs and 1 to 20 VL contents locally; the VL bound sits on
+// the nested VLEmbeddingInput.contents.
+func TestEmbeddingItemCountChangeIsDrift(t *testing.T) {
+	cases := []struct {
+		schema, property, want string
+		change                 func(p map[string]any)
+	}{
+		{"EmbeddingRequest", "input", "/embedding request.input: item bounds", func(p map[string]any) { p["maxItems"] = 2048.0 }},
+		{"EmbeddingRequest", "input", "/embedding request.input: item bounds", func(p map[string]any) { p["minItems"] = 2.0 }},
+		{"VLEmbeddingInput", "contents", "/vl-embedding request.input.contents: item bounds", func(p map[string]any) { p["maxItems"] = 30.0 }},
+		{"VLEmbeddingInput", "contents", "/vl-embedding request.input.contents: item bounds", func(p map[string]any) { p["minItems"] = 2.0 }},
+	}
+	for _, c := range cases {
+		live := edited(t, c.schema, func(props map[string]any) { c.change(props[c.property].(map[string]any)) })
+		code, _, errOut := runWith(t, live, snapshotPath)
+		if code != 1 || !strings.Contains(errOut, c.want) {
+			t.Errorf("%s.%s: exit %d, want 1 naming %q; stderr: %s", c.schema, c.property, code, c.want, errOut)
 		}
 	}
 }

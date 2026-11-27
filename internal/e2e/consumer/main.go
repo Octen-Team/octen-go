@@ -100,6 +100,25 @@ func main() {
 	}
 	fmt.Println("OK extract", extract.RequestID)
 
+	emb, err := client.Embedding.Create(ctx, octen.EmbeddingParams{Input: []string{"a", "b"}})
+	if err != nil || emb.RequestID != "rid-embedding" || emb.Data == nil || len(emb.Data.Results) != 2 ||
+		emb.Data.Results[1].Index != 1 || emb.Meta == nil || emb.Meta.Usage == nil || emb.Meta.Usage.InputTokens != 4 ||
+		emb.Meta.Warning != nil {
+		fail("Embedding: %+v %v", emb, err)
+	}
+	fmt.Println("OK embedding", emb.RequestID)
+
+	vl, err := client.VLEmbedding.Create(ctx, octen.VLEmbeddingParams{
+		Model:        "octen-vl-embedding",
+		Input:        octen.VLEmbeddingInput{Contents: []octen.VLEmbeddingContent{octen.TextContent("a"), octen.ImageContent("https://example.com/a.jpg")}},
+		EnableFusion: octen.Bool(true),
+	})
+	if err != nil || vl.RequestID != "rid-vl-embedding" || vl.Data == nil || len(vl.Data.Results) != 1 ||
+		vl.Data.Results[0].Type != "fusion" || vl.Meta == nil || vl.Meta.Usage == nil || vl.Meta.Usage.ImageCount != 1 {
+		fail("VLEmbedding: %+v %v", vl, err)
+	}
+	fmt.Println("OK vl-embedding", vl.RequestID)
+
 	// The server answers query "bad" with a structured 400.
 	_, err = client.Search.Search(ctx, octen.SearchParams{Query: "bad"})
 	var apiErr *octen.APIError
@@ -122,6 +141,13 @@ func main() {
 	_, err = client.Extract.Extract(ctx, octen.ExtractParams{URLs: []string{"https://example.com/a", " "}})
 	if !errors.As(err, &verr) || verr.Field != "urls[1]" {
 		fail("extract validation: %T %v", err, err)
+	}
+	fmt.Println("OK validation", verr.Field)
+
+	two := octen.VLEmbeddingContent{Text: octen.String("a"), Image: octen.String("https://example.com/a.jpg")}
+	_, err = client.VLEmbedding.Create(ctx, octen.VLEmbeddingParams{Model: "octen-vl-embedding", Input: octen.VLEmbeddingInput{Contents: []octen.VLEmbeddingContent{two}}})
+	if !errors.As(err, &verr) || verr.Field != "input.contents[0]" {
+		fail("vl-embedding validation: %T %v", err, err)
 	}
 	fmt.Println("OK validation", verr.Field)
 }
