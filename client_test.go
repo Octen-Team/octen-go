@@ -203,6 +203,11 @@ var endpointCalls = []endpointCall{
 		_, err := c.Embedding.Create(context.Background(), EmbeddingParams{Input: []string{"a"}}, o...)
 		return err
 	}},
+	{"/vl-embedding", 30 * time.Second, func(c *Client, o ...RequestOption) error {
+		p := VLEmbeddingParams{Model: "octen-vl-embedding", Input: VLEmbeddingInput{Contents: []VLEmbeddingContent{TextContent("a")}}}
+		_, err := c.VLEmbedding.Create(context.Background(), p, o...)
+		return err
+	}},
 }
 
 // The effective per-attempt timeout is read off the request context deadline, which the
