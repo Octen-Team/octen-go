@@ -122,28 +122,29 @@ func decodeJSON(body []byte) (any, bool) {
 	return v, true
 }
 
-// rawSpan is a JSON value that points into the body it was decoded from instead of copying it, unlike
-// json.RawMessage; json.Unmarshal hands UnmarshalJSON a sub-slice of its input.
-type rawSpan []byte
+// topLevelValue records, while decoding, whether a top-level value is a number other than a finite zero.
+// It keeps no bytes (Unmarshaler must not retain them) and decodes only numbers, so data is never built.
+type topLevelValue struct{ nonZeroNumber bool }
 
-func (r *rawSpan) UnmarshalJSON(b []byte) error {
-	*r = b
+func (v *topLevelValue) UnmarshalJSON(b []byte) error {
+	if len(b) == 0 || (b[0] != '-' && (b[0] < '0' || b[0] > '9')) {
+		return nil
+	}
+	n, _ := decodeJSON(b)
+	f, isNumber, finite := numberValue(n)
+	v.nonZeroNumber = isNumber && !(finite && f == 0)
 	return nil
 }
 
 // judgeResponse returns (nil, object) for a successful envelope and an *APIError otherwise.
 // A 2xx is a success only if the body is a non-empty JSON object whose code is not a non-zero number.
 // On a 2xx only the top level is decoded, so a large data object (Embedding vectors) is scanned but not built.
-func judgeResponse(status int, h http.Header, body []byte) (*APIError, map[string]rawSpan) {
+func judgeResponse(status int, h http.Header, body []byte) (*APIError, map[string]topLevelValue) {
 	text := stripBOM(body)
 	if status >= 200 && status < 300 {
-		var obj map[string]rawSpan
-		if json.Unmarshal(text, &obj) == nil && len(obj) > 0 {
-			code, _ := decodeJSON(obj["code"])
-			f, isNumber, finite := numberValue(code)
-			if !isNumber || (finite && f == 0) {
-				return nil, obj
-			}
+		var obj map[string]topLevelValue
+		if json.Unmarshal(text, &obj) == nil && len(obj) > 0 && !obj["code"].nonZeroNumber {
+			return nil, obj
 		}
 	}
 
