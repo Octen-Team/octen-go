@@ -237,6 +237,29 @@ func TestEmbeddingItemCountChangeIsDrift(t *testing.T) {
 	}
 }
 
+// The SDK rejects a VL content item with zero or several of text, image and video; the spec states
+// that rule only in the VLEmbeddingContent description.
+func TestVLContentRuleChangeIsDrift(t *testing.T) {
+	data, err := os.ReadFile(snapshotPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatal(err)
+	}
+	content := doc["components"].(map[string]any)["schemas"].(map[string]any)["VLEmbeddingContent"].(map[string]any)
+	content["description"] = "A single content element. Each object may combine text, image and video."
+	out, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, _, errOut := runWith(t, writeFile(t, string(out)), snapshotPath)
+	if want := "/vl-embedding request.input.contents[]: description"; code != 1 || !strings.Contains(errOut, want) {
+		t.Fatalf("exit %d, want 1 naming %q; stderr: %s", code, want, errOut)
+	}
+}
+
 // Flatten ignores descriptions, lengths and value ranges, yet the SDK relies on these Extract values:
 // the urls limits it checks locally (stated in the description) and the per-URL timeout its default derives from.
 func TestExtractLocalCheckChangeIsDrift(t *testing.T) {

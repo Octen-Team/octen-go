@@ -178,6 +178,27 @@ func (d *Doc) PropertyKeywords(schema, property string, items bool, keys ...stri
 	return strings.Join(parts, " "), nil
 }
 
+// ItemsRef returns the schema name that the items of an array property of schema point to with a direct $ref.
+func (d *Doc) ItemsRef(schema, property string) (string, error) {
+	name, err := refName(dig(d.schemas, schema, "properties", property, "items", "$ref"))
+	if err != nil {
+		return "", fmt.Errorf("spec: %s.%s items: %w", schema, property, err)
+	}
+	return name, nil
+}
+
+// SchemaDescription returns the description of a named schema, "unset" when it has none.
+func (d *Doc) SchemaDescription(name string) (string, error) {
+	s, ok := dig(d.schemas, name).(map[string]any)
+	if !ok {
+		return "", fmt.Errorf("spec: schema %s not found", name)
+	}
+	if text, ok := s["description"].(string); ok {
+		return text, nil
+	}
+	return "unset", nil
+}
+
 // PropertyDescription returns the description of a property declared directly on schema, "unset" when it has none.
 func (d *Doc) PropertyDescription(schema, property string) (string, error) {
 	p, ok := dig(d.schemas, schema, "properties", property).(map[string]any)

@@ -7,7 +7,7 @@
 - New services: `Client.Embedding` (`Create`, `POST /embedding`) and `Client.VLEmbedding` (`Create`, `POST /vl-embedding`), with request and response types checked against the public OpenAPI spec. `TextContent`, `ImageContent` and `VideoContent` build VL content items.
 - Local checks: Embedding's `Input` must hold 1 to 1000 non-blank strings; VL Embedding's `Model` must be non-blank and its `Input.Contents` must hold 1 to 20 items, each with exactly one non-blank `Text`, `Image` or `Video`. Image and video counts, `Dimension` and `FPS` are left to the server, as other ranges are.
 - Both use the client's default timeout (30 s). A long video can take longer: pass `WithRequestTimeout` for that call.
-- `specdrift` now also covers the two endpoints, including the `input` item limit and the VL contents limit.
+- `specdrift` now also covers the two endpoints, including the `input` item limit, the VL contents limit and the one-value-per-item rule of VL content.
 
 ## 0.4.1
 

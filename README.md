@@ -476,7 +476,7 @@ OCTEN_LIVE=1 OCTEN_LIVE_VIDEO=1 OCTEN_API_KEY=... go test -count=1 -run TestLive
 go run ./internal/tools/specdrift   # compares the live OpenAPI spec with testdata/openapi.json
 ```
 
-`testdata/openapi.json` is a snapshot of the public OpenAPI spec that the contract test compares the types against. A weekly workflow runs `specdrift` and fails when the schemas of the thirteen endpoints change upstream, or the values the SDK relies on (the item bounds it checks, including Embedding's `input` and VL Embedding's `input.contents`, the `urls` limits of Extract and its per-URL `timeout` default and range); it never rewrites the snapshot. [testdata/README.md](testdata/README.md) describes the snapshot and how to update it.
+`testdata/openapi.json` is a snapshot of the public OpenAPI spec that the contract test compares the types against. A weekly workflow runs `specdrift` and fails when the schemas of the thirteen endpoints change upstream, or the values the SDK relies on (the item bounds it checks, including Embedding's `input` and VL Embedding's `input.contents`, the one-value-per-item rule of VL content, the `urls` limits of Extract and its per-URL `timeout` default and range); it never rewrites the snapshot. [testdata/README.md](testdata/README.md) describes the snapshot and how to update it.
 
 ## License
 

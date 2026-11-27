@@ -63,9 +63,13 @@ func TestLiveEmbeddingBatchOrder(t *testing.T) {
 	for i := range texts {
 		b := batch.Data.Results[i].Embedding
 		for j := range texts {
+			if len(b) != 8 || len(alone[j]) != 8 {
+				t.Fatalf("lengths %d and %d, want 8", len(b), len(alone[j]))
+			}
 			sim := cosine(b, alone[j])
 			t.Logf("cos(batch[%d], alone[%d]) = %.5f", i, j, sim)
-			if (j == i && sim < 0.99) || (j != i && sim >= cosine(b, alone[i])) {
+			// A zero vector gives NaN, which would fail neither comparison below
+			if math.IsNaN(sim) || (j == i && sim < 0.99) || (j != i && sim >= cosine(b, alone[i])) {
 				t.Fatalf("batch[%d] is not closest to %q alone", i, texts[i])
 			}
 		}

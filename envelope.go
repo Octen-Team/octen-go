@@ -124,18 +124,21 @@ func decodeJSON(body []byte) (any, bool) {
 
 // judgeResponse returns (nil, object) for a successful envelope and an *APIError otherwise.
 // A 2xx is a success only if the body is a non-empty JSON object whose code is not a non-zero number.
-func judgeResponse(status int, h http.Header, body []byte) (*APIError, map[string]any) {
+// On a 2xx only the top level is decoded, so a large data object (Embedding vectors) is scanned but not built.
+func judgeResponse(status int, h http.Header, body []byte) (*APIError, map[string]json.RawMessage) {
 	text := stripBOM(body)
-	parsed, _ := decodeJSON(text)
-	obj, isObj := parsed.(map[string]any)
-
-	if status >= 200 && status < 300 && isObj && len(obj) > 0 {
-		f, isNumber, finite := numberValue(obj["code"])
-		if !isNumber || (finite && f == 0) {
-			return nil, obj
+	if status >= 200 && status < 300 {
+		var obj map[string]json.RawMessage
+		if json.Unmarshal(text, &obj) == nil && len(obj) > 0 {
+			code, _ := decodeJSON(obj["code"])
+			f, isNumber, finite := numberValue(code)
+			if !isNumber || (finite && f == 0) {
+				return nil, obj
+			}
 		}
 	}
 
+	parsed, _ := decodeJSON(text)
 	e := &APIError{
 		StatusCode: status,
 		Code:       extractCode(parsed),

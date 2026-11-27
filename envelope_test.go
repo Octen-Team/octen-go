@@ -222,3 +222,25 @@ func TestJudgeResponseEdges(t *testing.T) {
 		}
 	})
 }
+
+// A 1000-text Embedding batch returns millions of numbers; judging success must not decode them all.
+func TestJudgeResponseDoesNotDecodeLargeData(t *testing.T) {
+	var b strings.Builder
+	b.WriteString(`{"code":0,"request_id":"r","data":{"results":[{"index":0,"embedding":[`)
+	for i := 0; i < 10000; i++ {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString("0.0123")
+	}
+	b.WriteString(`]}]}}`)
+	body := []byte(b.String())
+	allocs := testing.AllocsPerRun(5, func() {
+		if e, _ := judgeResponse(200, nil, body); e != nil {
+			t.Fatal(e)
+		}
+	})
+	if allocs > 100 {
+		t.Fatalf("judgeResponse made %.0f allocations for a 10,000-number body, want at most 100", allocs)
+	}
+}

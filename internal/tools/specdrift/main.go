@@ -48,6 +48,19 @@ var localChecks = []localCheck{
 		}
 		return d.ItemBounds(input, "contents")
 	}},
+	// The spec states "exactly one of text, image or video" per item only in this text.
+	{"/vl-embedding", "input.contents[]", "description", "it states the one-value-per-item rule the SDK checks locally", func(d *spec.Doc, s string) (string, error) {
+		input, err := d.PropertyRef(s, "input")
+		if err != nil {
+			return "", err
+		}
+		item, err := d.ItemsRef(input, "contents")
+		if err != nil {
+			return "", err
+		}
+		text, err := d.SchemaDescription(item)
+		return strconv.Quote(text), err
+	}},
 	// The spec states the limits of urls (20 URLs, 2048 characters each) only in this text.
 	{"/extract", "urls", "description", "it states the URL limits the SDK checks locally", func(d *spec.Doc, s string) (string, error) {
 		text, err := d.PropertyDescription(s, "urls")
