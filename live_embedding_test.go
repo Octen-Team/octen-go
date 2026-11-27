@@ -44,24 +44,26 @@ func TestLiveEmbeddingBatchOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(batch.Data.Results) != len(texts) {
-		t.Fatalf("results = %d, want %d", len(batch.Data.Results), len(texts))
+	// Callers match by Index, not by position: every input index exactly once
+	byIndex := map[int][]float64{}
+	for _, r := range embeddingResults(t, batch, len(texts)) {
+		if _, dup := byIndex[r.Index]; dup || r.Index < 0 || r.Index >= len(texts) {
+			t.Fatalf("unexpected or repeated index %d", r.Index)
+		}
+		byIndex[r.Index] = r.Embedding
 	}
 	// Control: each text embedded alone. Batched values differ by about 1e-4 (seen 2026-11-27), so the batch
-	// vector at position i must be the one closest to text i alone, not equal to it.
+	// vector for index i must be the one closest to text i alone, not equal to it.
 	alone := make([][]float64, len(texts))
 	for i, text := range texts {
-		if got := batch.Data.Results[i].Index; got != i {
-			t.Fatalf("results[%d].index = %d", i, got)
-		}
 		single, err := c.Embedding.Create(liveContext(t), params([]string{text}))
 		if err != nil {
 			t.Fatal(err)
 		}
-		alone[i] = single.Data.Results[0].Embedding
+		alone[i] = embeddingResults(t, single, 1)[0].Embedding
 	}
 	for i := range texts {
-		b := batch.Data.Results[i].Embedding
+		b := byIndex[i]
 		for j := range texts {
 			if len(b) != 8 || len(alone[j]) != 8 {
 				t.Fatalf("lengths %d and %d, want 8", len(b), len(alone[j]))
@@ -74,6 +76,23 @@ func TestLiveEmbeddingBatchOrder(t *testing.T) {
 			}
 		}
 	}
+}
+
+// embeddingResults fails the test, instead of panicking, when data or the expected results are missing.
+func embeddingResults(t *testing.T, resp *octen.EmbeddingResponse, want int) []octen.EmbeddingResult {
+	t.Helper()
+	if resp.Data == nil || len(resp.Data.Results) != want {
+		t.Fatalf("data = %+v, want %d results", resp.Data, want)
+	}
+	return resp.Data.Results
+}
+
+func vlResults(t *testing.T, resp *octen.VLEmbeddingResponse, want int) []octen.VLEmbeddingResult {
+	t.Helper()
+	if resp.Data == nil || len(resp.Data.Results) != want {
+		t.Fatalf("data = %+v, want %d results", resp.Data, want)
+	}
+	return resp.Data.Results
 }
 
 func cosine(a, b []float64) float64 {
@@ -126,7 +145,7 @@ func TestLiveVLEmbeddingFusion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r := resp.Data.Results; len(r) != 1 || r[0].Type != "fusion" {
+	if r := vlResults(t, resp, 1); r[0].Type != "fusion" {
 		t.Fatalf("results = %+v", r)
 	}
 }
@@ -142,7 +161,8 @@ func TestLiveVLEmbeddingVideo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(resp.Data.Results) != 1 || resp.Meta == nil || resp.Meta.Usage == nil || resp.Meta.Usage.Duration <= 0 {
+	vlResults(t, resp, 1)
+	if resp.Meta == nil || resp.Meta.Usage == nil || resp.Meta.Usage.Duration <= 0 {
 		t.Fatalf("data = %+v, meta = %+v", resp.Data, resp.Meta)
 	}
 }

@@ -122,13 +122,22 @@ func decodeJSON(body []byte) (any, bool) {
 	return v, true
 }
 
+// rawSpan is a JSON value that points into the body it was decoded from instead of copying it, unlike
+// json.RawMessage; json.Unmarshal hands UnmarshalJSON a sub-slice of its input.
+type rawSpan []byte
+
+func (r *rawSpan) UnmarshalJSON(b []byte) error {
+	*r = b
+	return nil
+}
+
 // judgeResponse returns (nil, object) for a successful envelope and an *APIError otherwise.
 // A 2xx is a success only if the body is a non-empty JSON object whose code is not a non-zero number.
 // On a 2xx only the top level is decoded, so a large data object (Embedding vectors) is scanned but not built.
-func judgeResponse(status int, h http.Header, body []byte) (*APIError, map[string]json.RawMessage) {
+func judgeResponse(status int, h http.Header, body []byte) (*APIError, map[string]rawSpan) {
 	text := stripBOM(body)
 	if status >= 200 && status < 300 {
-		var obj map[string]json.RawMessage
+		var obj map[string]rawSpan
 		if json.Unmarshal(text, &obj) == nil && len(obj) > 0 {
 			code, _ := decodeJSON(obj["code"])
 			f, isNumber, finite := numberValue(code)

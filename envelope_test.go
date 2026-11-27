@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -242,5 +243,15 @@ func TestJudgeResponseDoesNotDecodeLargeData(t *testing.T) {
 	})
 	if allocs > 100 {
 		t.Fatalf("judgeResponse made %.0f allocations for a 10,000-number body, want at most 100", allocs)
+	}
+	// One copy of the data is a single allocation, so the bytes are checked too.
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	for i := 0; i < 5; i++ {
+		_, _ = judgeResponse(200, nil, body)
+	}
+	runtime.ReadMemStats(&after)
+	if perRun := (after.TotalAlloc - before.TotalAlloc) / 5; perRun > uint64(len(body))/10 {
+		t.Fatalf("judgeResponse allocated %d bytes for a %d-byte body, want at most a tenth of it", perRun, len(body))
 	}
 }
