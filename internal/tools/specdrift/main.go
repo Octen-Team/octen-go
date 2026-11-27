@@ -24,7 +24,7 @@ const (
 
 var endpoints = []string{
 	"/search", "/broad-search", "/news-search", "/business-search", "/pulse-search", "/place-search",
-	"/search-premier", "/image-search", "/video-search", "/design-search", "/extract",
+	"/search-premier", "/image-search", "/video-search", "/design-search", "/extract", "/embedding", "/vl-embedding",
 }
 
 // localCheck reads a request value that Flatten ignores (counts, lengths, ranges, descriptions)
@@ -40,6 +40,27 @@ var localChecks = []localCheck{
 	{"/image-search", "inputs", "item bounds", checkedLocally, itemBounds("inputs")},
 	{"/video-search", "inputs", "item bounds", checkedLocally, itemBounds("inputs")},
 	{"/extract", "urls", "item bounds", checkedLocally, itemBounds("urls")},
+	{"/embedding", "input", "item bounds", checkedLocally, itemBounds("input")},
+	{"/vl-embedding", "input.contents", "item bounds", checkedLocally, func(d *spec.Doc, s string) (string, error) {
+		input, err := d.PropertyRef(s, "input")
+		if err != nil {
+			return "", err
+		}
+		return d.ItemBounds(input, "contents")
+	}},
+	// The spec states "exactly one of text, image or video" per item only in this text.
+	{"/vl-embedding", "input.contents[]", "description", "it states the one-value-per-item rule the SDK checks locally", func(d *spec.Doc, s string) (string, error) {
+		input, err := d.PropertyRef(s, "input")
+		if err != nil {
+			return "", err
+		}
+		item, err := d.ItemsRef(input, "contents")
+		if err != nil {
+			return "", err
+		}
+		text, err := d.SchemaDescription(item)
+		return strconv.Quote(text), err
+	}},
 	// The spec states the limits of urls (20 URLs, 2048 characters each) only in this text.
 	{"/extract", "urls", "description", "it states the URL limits the SDK checks locally", func(d *spec.Doc, s string) (string, error) {
 		text, err := d.PropertyDescription(s, "urls")

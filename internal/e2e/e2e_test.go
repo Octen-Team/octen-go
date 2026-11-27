@@ -38,6 +38,10 @@ func fakeAPI(t *testing.T) (*httptest.Server, func() []seen) {
 		"/extract": `{"code":0,"msg":"success","request_id":"rid-extract","data":{"results":[{"url":"https://example.com/a","status":"success","resolved_mode":"standard","full_content":"# A","page_structure":null,` +
 			`"links":[{"url":"https://example.com/b","anchor_text":"B","is_external":false}]},{"url":"https://broken.invalid/","status":"failed","error_message":"failed"}]},` +
 			`"meta":{"usage":{"total_urls":2,"successful_urls":1,"successful_by_mode":{"standard_urls":1,"advanced_urls":0}}}}`,
+		"/embedding": `{"code":0,"msg":"success","request_id":"rid-embedding","data":{"results":[{"index":0,"embedding":[0.1,0.2]},{"index":1,"embedding":[0.3,0.4]}],` +
+			`"model":"octen-embedding-0.6b"},"meta":{"usage":{"input_tokens":4},"latency":12,"warning":null}}`,
+		"/vl-embedding": `{"code":0,"msg":"success","request_id":"rid-vl-embedding","data":{"results":[{"index":0,"embedding":[0.5,0.6],"type":"fusion"}],` +
+			`"model":"octen-vl-embedding"},"meta":{"usage":{"input_tokens":30,"image_count":1},"warning":""}}`,
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -91,13 +95,16 @@ func checkInput(in fakeInput, images bool) error {
 
 // checkBody rejects a body without the input its path requires: one valid entry in inputs for
 // image and video search, a query or images.group_id for design search, urls and an include_links
-// object for extract, and a query elsewhere.
+// object for extract, an input array for embedding, a model and input.contents for VL embedding,
+// and a query elsewhere.
 func checkBody(path string, body []byte) error {
 	var b struct {
 		Query        *string         `json:"query"`
 		Inputs       []fakeInput     `json:"inputs"`
 		URLs         []string        `json:"urls"`
 		IncludeLinks json.RawMessage `json:"include_links"`
+		Input        json.RawMessage `json:"input"`
+		Model        string          `json:"model"`
 		Images       *struct {
 			GroupID string `json:"group_id"`
 		} `json:"images"`
@@ -118,6 +125,18 @@ func checkBody(path string, body []byte) error {
 		// The consumer sends include_links as {} to prove an empty options struct reaches the wire.
 		if len(b.URLs) == 0 || b.Inputs != nil || string(b.IncludeLinks) != "{}" {
 			return errors.New("want urls and include_links {}")
+		}
+	case "/embedding":
+		var input []string
+		if json.Unmarshal(b.Input, &input) != nil || len(input) == 0 || b.Query != nil {
+			return errors.New("want an input array of strings and no query")
+		}
+	case "/vl-embedding":
+		var input struct {
+			Contents []map[string]string `json:"contents"`
+		}
+		if b.Model == "" || json.Unmarshal(b.Input, &input) != nil || len(input.Contents) == 0 {
+			return errors.New("want a model and input.contents")
 		}
 	case "/design-search":
 		if b.Inputs != nil || (!hasQuery && (b.Images == nil || b.Images.GroupID == "")) {
@@ -198,22 +217,23 @@ func TestConsumerModule(t *testing.T) {
 		"OK business-search rid-business-search", "OK pulse-search rid-pulse-search",
 		"OK place-search rid-place-search", "OK search-premier rid-search-premier", "OK image-search rid-image-search",
 		"OK video-search rid-video-search", "OK design-search rid-design-search", "OK extract rid-extract",
-		"OK error-path 400 rid-bad", "OK validation query", "OK validation urls[1]",
+		"OK embedding rid-embedding", "OK vl-embedding rid-vl-embedding",
+		"OK error-path 400 rid-bad", "OK validation query", "OK validation urls[1]", "OK validation input.contents[0]",
 	} {
 		if !strings.Contains(string(out), want) {
 			t.Errorf("output lacks %q", want)
 		}
 	}
 
-	// Eleven successes, then the 400; the blank query and the blank URL must not reach the server.
+	// Thirteen successes, then the 400; the locally rejected requests must not reach the server.
 	wantPaths := []string{"/search", "/broad-search", "/news-search", "/business-search", "/pulse-search", "/place-search",
-		"/search-premier", "/image-search", "/video-search", "/design-search", "/extract", "/search"}
+		"/search-premier", "/image-search", "/video-search", "/design-search", "/extract", "/embedding", "/vl-embedding", "/search"}
 	got := requests()
 	if len(got) != len(wantPaths) {
 		t.Fatalf("server saw %d requests, want %d: %+v", len(got), len(wantPaths), got)
 	}
 	for i, r := range got {
-		if r.path != wantPaths[i] || r.key != "e2e-key" || r.agent != "octen-go-sdk/0.4.1" {
+		if r.path != wantPaths[i] || r.key != "e2e-key" || r.agent != "octen-go-sdk/0.5.0" {
 			t.Errorf("request %d = %+v, want path %s with the SDK key and user agent", i, r, wantPaths[i])
 		}
 	}
@@ -285,6 +305,13 @@ func TestFakeAPIChecksBodyShape(t *testing.T) {
 		{"/extract", `{"urls":["https://example.com/a"]}`, false},
 		{"/extract", `{"urls":[],"include_links":{}}`, false},
 		{"/extract", `{"query":"q","include_links":{}}`, false},
+		{"/embedding", `{"input":["a"]}`, true},
+		{"/embedding", `{"input":"a"}`, false},
+		{"/embedding", `{"input":[]}`, false},
+		{"/embedding", `{"query":"q","input":["a"]}`, false},
+		{"/vl-embedding", `{"model":"m","input":{"contents":[{"text":"a"}]}}`, true},
+		{"/vl-embedding", `{"input":{"contents":[{"text":"a"}]}}`, false},
+		{"/vl-embedding", `{"model":"m","contents":[{"text":"a"}]}`, false},
 		{"/search", `not json`, false},
 		{"/search", `{"query":"q","inputs":[{"type":"text","data":"q"}]}`, false},
 	}

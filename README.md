@@ -2,7 +2,7 @@
 
 Official Go SDK for the [Octen](https://docs.octen.ai) search and extract API. It has no dependencies outside the standard library and needs Go 1.22 or newer.
 
-It covers eleven endpoints: Web Search, Web Search Premier, Broad Search, News Search, Business Search, Pulse Search, Place Search, Image Search, Video Search (invite-only beta), Design Search and Extract.
+It covers thirteen endpoints: Web Search, Web Search Premier, Broad Search, News Search, Business Search, Pulse Search, Place Search, Image Search, Video Search (invite-only beta), Design Search, Extract, Embedding and VL Embedding.
 
 - [Install](#install)
 - [Quick start](#quick-start)
@@ -19,7 +19,7 @@ It covers eleven endpoints: Web Search, Web Search Premier, Broad Search, News S
 ## Install
 
 ```bash
-go get github.com/Octen-Team/octen-go@v0.4.1
+go get github.com/Octen-Team/octen-go@v0.5.0
 ```
 
 Create an API key in your Octen account and either pass it with `octen.WithAPIKey` or set the `OCTEN_API_KEY` environment variable. Surrounding whitespace is trimmed from the key.
@@ -66,7 +66,7 @@ Responses are the whole JSON envelope: `Code`, `Msg`, `RequestID`, `Data` and `M
 
 ## Methods
 
-Every method takes a `context.Context`, the request struct, and optional [request options](#request-options). `Query` is required, except that Image and Video Search take exactly one entry in `Inputs` instead, Design Search may leave it out when `Images.GroupID` is set, and Extract takes `URLs`.
+Every method takes a `context.Context`, the request struct, and optional [request options](#request-options). `Query` is required, except that Image and Video Search take exactly one entry in `Inputs` instead, Design Search may leave it out when `Images.GroupID` is set, Extract takes `URLs`, Embedding takes `Input` and VL Embedding takes `Model` and `Input.Contents`.
 
 The snippets below check `err` and `Data != nil` inline to stay short; `Data` and `Meta` are pointers that are `nil` when the server did not send them.
 
@@ -247,6 +247,34 @@ if err == nil && pages.Data != nil {
 		fmt.Println(by.StandardURLs, by.AdvancedURLs)
 	}
 }
+
+// Embedding: POST /embedding (1 to 1000 texts per call)
+emb, err := client.Embedding.Create(ctx, octen.EmbeddingParams{
+	Input:     []string{"What is vector search?", "Vector search finds items by meaning."},
+	Model:     octen.String("octen-embedding-4b"), // the server default; or "octen-embedding-0.6b", "octen-embedding-8b"
+	Dimension: octen.Int(1024),                    // defaults to the model's maximum
+	InputType: octen.String("query"),               // "query" for search queries; "document" or unset for texts you index
+})
+if err == nil && emb.Data != nil {
+	for _, r := range emb.Data.Results { // r.Index is the position in Input
+		fmt.Println(r.Index, len(r.Embedding))
+	}
+}
+
+// VL Embedding: POST /vl-embedding (text, images and video in one vector space; 1 to 20 items per call)
+vl, err := client.VLEmbedding.Create(ctx, octen.VLEmbeddingParams{
+	Model: "octen-vl-embedding", // or "octen-vl-embedding-large"
+	Input: octen.VLEmbeddingInput{Contents: []octen.VLEmbeddingContent{
+		octen.TextContent("Outdoor tent, 3-4 person"),
+		octen.ImageContent("https://example.com/tent.jpg"), // a public URL or base64 data
+	}},
+	EnableFusion: octen.Bool(true), // one fused vector instead of one per item
+})
+if err == nil && vl.Data != nil {
+	for _, r := range vl.Data.Results { // r.Type is "vl" (one per item, r.Index is its position) or "fusion"
+		fmt.Println(r.Type, len(r.Embedding))
+	}
+}
 ```
 
 `ResultType` (`result_type`) on Web Search and on Broad Search's `SearchOptions` is `standard` (the default) or `dynamic`; it is case-sensitive and the SDK sends only the value you set. It determines how results are returned: `standard` returns results as the fields you set specify, while `dynamic` returns only relevant results, up to `Count`, and adjusts highlight length per result. So with `dynamic`, `Count` is a maximum (fewer results, possibly none, can come back) and `Highlight.MaxTokens` is a cap that Octen may adjust per result. Web Search echoes the value used in `resp.Meta.ResultType`; Broad Search does not.
@@ -255,11 +283,13 @@ Web Search Premier takes `SearchParams` and returns `*SearchResponse`, the same 
 
 Extract notes: each URL gets its own result with a `Status`, so a call can succeed while some URLs fail (`Status` is `"failed"` with an `ErrorMessage`); failed URLs are not billed. Match results to your input by `URL` rather than by position. With `Query`, each result carries `Highlights` instead of `FullContent`. `Mode` is `standard` (the default), `advanced` (slower, more expensive, for pages that are hard to reach) or `auto` (picks one per URL); each result's `ResolvedMode` is the mode that URL is billed at, and `Meta.Usage.SuccessfulByMode` counts them. The body's `Timeout` (1 to 60 s, default 30) bounds each URL on the server; it is not the SDK's HTTP timeout, which Extract derives from it (see [Client options](#client-options)). `IncludeLinks` set to `&octen.ExtractLinksOptions{}` is sent as `{}` and returns links with the server defaults; `nil` leaves links out. `PageStructure`, `Category`, `Title`, `FullContent`, `TimePublished`, `Favicon` and `CoverImage` are pointers that are `nil` when the server sends `null` or leaves them out.
 
+Embedding notes: `Data.Results[i].Index` is the position in `Input`. `InputType` `"query"` adds a retrieval prompt (counted in `InputTokens`); use `"document"` or leave it unset for the texts you index. Texts longer than 10,000 characters are cut by the server, which says so in `Meta.Warning`. VL Embedding: `ImageContent` takes a public URL or base64 data, `VideoContent` a public URL; the server must be able to fetch the URL, otherwise it answers with a 400 (`ErrBadRequest`). A long video can take longer than the default 30 s timeout: pass `WithRequestTimeout` for that call. Each result's `Type` is `vl` or `fusion`.
+
 `BusinessEntity` is a union of `Company` and `Person`, selected by the entity's `type`. For a `type` this version does not know, or a missing one, only `Type` and `Raw` are filled, so a new entity type never breaks decoding: always keep a `default` branch. `Raw` holds the entity's original JSON, and `json.Marshal` writes it back unchanged, so a decoded response can be stored and decoded again. An entity built by hand without `Raw` marshals as its `Company` or `Person`.
 
 ### Local validation
 
-Before sending anything the SDK checks that `Query` is not blank (surrounding whitespace does not count) and rejects `NaN` and `±Inf` anywhere in the params, because `encoding/json` cannot encode them; both are reported as a `*ValidationError` with the offending field. Image and Video Search instead need exactly one input in `Inputs` (`Field` is `inputs`) whose `Type` is `text` or `image` for Image Search and `text` for Video Search (`inputs[0].type`); a text input needs non-blank `Data` (`inputs[0].data`) and no `URL` (`inputs[0].url`), and an image input needs exactly one of a non-blank `URL` or base64 `Data` (`inputs[0]`); Design Search needs a non-blank `Query` or a non-blank `Images.GroupID` (`Field` is `query`). Extract needs 1 to 20 entries in `URLs` (`Field` is `urls`), each not blank and at most 2048 characters, counted as Unicode code points (`urls[1]` names the offending entry). Apart from the input `Type` and these `URLs` limits, it does not check value ranges, lengths or enum values (for example `Count` or `TimeRange`); out-of-range values come back from the server as a 400 and match `ErrBadRequest`. For Extract, an out-of-range `IncludeLinks.MaxLinks` or `Query` (over 500 characters), or an unknown `Mode`, `Format` or `Scope`, comes back as a 400; the server adjusts an out-of-range `Timeout` or `MaxAgeSeconds` to the nearest bound instead.
+Before sending anything the SDK checks that `Query` is not blank (surrounding whitespace does not count) and rejects `NaN` and `±Inf` anywhere in the params, because `encoding/json` cannot encode them; both are reported as a `*ValidationError` with the offending field. Image and Video Search instead need exactly one input in `Inputs` (`Field` is `inputs`) whose `Type` is `text` or `image` for Image Search and `text` for Video Search (`inputs[0].type`); a text input needs non-blank `Data` (`inputs[0].data`) and no `URL` (`inputs[0].url`), and an image input needs exactly one of a non-blank `URL` or base64 `Data` (`inputs[0]`); Design Search needs a non-blank `Query` or a non-blank `Images.GroupID` (`Field` is `query`). Extract needs 1 to 20 entries in `URLs` (`Field` is `urls`), each not blank and at most 2048 characters, counted as Unicode code points (`urls[1]` names the offending entry). Embedding needs 1 to 1000 entries in `Input` (`Field` is `input`), none blank (`input[2]`), because the server accepts and bills a blank text. VL Embedding needs a non-blank `Model` (`model`; its value is checked by the server) and 1 to 20 items in `Input.Contents` (`input.contents`), each with exactly one of `Text`, `Image` or `Video` set to a non-blank string (`input.contents[0]`), as the API reference says. Apart from the input `Type` and these limits, it does not check value ranges, lengths or enum values (for example `Count` or `TimeRange`); out-of-range values come back from the server as a 400 and match `ErrBadRequest`. For Extract, an out-of-range `IncludeLinks.MaxLinks` or `Query` (over 500 characters), or an unknown `Mode`, `Format` or `Scope`, comes back as a 400; the server adjusts an out-of-range `Timeout` or `MaxAgeSeconds` to the nearest bound instead.
 
 Slices are omitted from the request when they are empty, so an empty slice cannot be sent explicitly.
 
@@ -389,11 +419,11 @@ For billing-sensitive jobs, use `octen.WithMaxRetries(0)` and handle retries you
 
 ## Differences from the Python SDK
 
-Compared with `octen-py` 0.13.0:
+Compared with `octen-py` 0.13.1:
 
 | Area | `octen-py` | `octen-go` |
 |---|---|---|
-| Parameter validation | Checks value ranges (such as `count`) locally | Checks only the required inputs (a non-blank `Query`, one Image or Video Search input, 1 to 20 Extract `URLs`) and that numbers are finite; ranges are checked by the server (400) |
+| Parameter validation | Checks value ranges (such as `count`) locally | Checks only the required inputs (a non-blank `Query`, one Image or Video Search input, 1 to 20 Extract `URLs`, the Embedding and VL Embedding items) and that numbers are finite; ranges are checked by the server (400) |
 | Image Search input | `query=` or `image_url=` keyword (or a raw `inputs=` list) | One `ImageSearchInput` in `Inputs` |
 | Video Search input | `query=` keyword | One `VideoSearchInput` in `Inputs` |
 | Unknown keys in nested request objects | Top level rejected, nested `highlight` / `full_content` allowed | Not possible: requests are typed structs |
@@ -411,6 +441,11 @@ Compared with `octen-py` 0.13.0:
 | Extract local checks | `urls` (1 to 20, each non-empty and at most 2048 characters), `query` length, `timeout` (1 to 60), `max_age_seconds` (not negative), `include_links.max_links` (1 to 1000) and the `mode`, `format` and `scope` values | `URLs` only (1 to 20, each non-blank and at most 2048 characters); the rest is left to the server, which rejects or adjusts it as described under [Local validation](#local-validation) |
 | Extract HTTP timeout | The client's timeout (30 s by default) unless `request_timeout=` is passed; the docs suggest raising it for `advanced` / `auto` | Derived from the per-URL `Timeout`: 120 s by default, 150 s with `Timeout` 60, unless a client or per-request timeout is set |
 | Extract response | `items` parses each result into a model (and raises on a malformed row); helpers such as `successful_by_mode`, `standard_urls`, `advanced_urls` | Typed structs; read `Data.Results` and `Meta.Usage` directly |
+| Embedding call | `client.embedding.create(input=..., ...)` takes a single string or a list; also accepts `truncation`, which is not in the API reference and which the server ignores (sent only when passed); helpers `embed_query`, `embed_documents` and `get_embeddings()` | `client.Embedding.Create(ctx, octen.EmbeddingParams{Input: ...})` with the request body as in the API reference; `Input` is always a slice; no helpers |
+| Embedding local checks | Non-blank items, the `model` and `input_type` values, `dimension` at least 1 | `Input` only (1 to 1000 non-blank items) |
+| VL Embedding call | `client.vl_embedding.create(model=..., contents=[...], ...)`, with `contents` at the top level | `client.VLEmbedding.Create(ctx, octen.VLEmbeddingParams{Model: ..., Input: octen.VLEmbeddingInput{Contents: ...}})` as in the API reference |
+| VL Embedding local checks | One of text, image or video per item, 1 to 20 items, at most 5 images and 1 video, the `model` value, `dimension` against the model's maximum, `fps` 0 to 1 | A non-blank `Model` and the items (1 to 20, each with exactly one non-blank text, image or video); the model name, counts and ranges are checked by the server |
+| VL result `type` | `vl` or `fusion`; any other value fails validation | Returned as given |
 
 Because the Python SDK by default retries more situations (client timeouts and every network error), it carries the double-billing risks described above and more unless `retry_after_send=False` is set.
 
@@ -441,7 +476,7 @@ OCTEN_LIVE=1 OCTEN_LIVE_VIDEO=1 OCTEN_API_KEY=... go test -count=1 -run TestLive
 go run ./internal/tools/specdrift   # compares the live OpenAPI spec with testdata/openapi.json
 ```
 
-`testdata/openapi.json` is a snapshot of the public OpenAPI spec that the contract test compares the types against. A weekly workflow runs `specdrift` and fails when the schemas of the eleven endpoints change upstream, or the values the SDK relies on (the item bounds it checks, the `urls` limits of Extract and its per-URL `timeout` default and range); it never rewrites the snapshot. [testdata/README.md](testdata/README.md) describes the snapshot and how to update it.
+`testdata/openapi.json` is a snapshot of the public OpenAPI spec that the contract test compares the types against. A weekly workflow runs `specdrift` and fails when the schemas of the thirteen endpoints change upstream, or the values the SDK relies on (the item bounds it checks, including Embedding's `input` and VL Embedding's `input.contents`, the one-value-per-item rule of VL content, the `urls` limits of Extract and its per-URL `timeout` default and range); it never rewrites the snapshot. [testdata/README.md](testdata/README.md) describes the snapshot and how to update it.
 
 ## License
 

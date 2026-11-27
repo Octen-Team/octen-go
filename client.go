@@ -32,6 +32,10 @@ type Client struct {
 	DesignSearch *DesignSearchService
 	// Extract serves the Extract endpoint, which returns the content of 1 to 20 URLs per call.
 	Extract *ExtractService
+	// Embedding serves the text Embedding endpoint (1 to 1000 texts per call).
+	Embedding *EmbeddingService
+	// VLEmbedding serves the VL Embedding endpoint (1 to 20 text, image or video items per call).
+	VLEmbedding *VLEmbeddingService
 }
 
 // NewClient builds a client from the options. Invalid configuration, or a missing API key,
@@ -68,6 +72,8 @@ func NewClient(opts ...Option) (*Client, error) {
 		VideoSearch:  &VideoSearchService{c: c},
 		DesignSearch: &DesignSearchService{c: c},
 		Extract:      &ExtractService{c: c},
+		Embedding:    &EmbeddingService{c: c},
+		VLEmbedding:  &VLEmbeddingService{c: c},
 	}, nil
 }
 

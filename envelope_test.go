@@ -3,8 +3,10 @@ package octen
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -215,10 +217,70 @@ func TestJudgeResponseEdges(t *testing.T) {
 			t.Fatalf("Message = %q", e.Message)
 		}
 	})
-	t.Run("returns the parsed object on success", func(t *testing.T) {
+	t.Run("returns the top-level keys on success", func(t *testing.T) {
 		e, obj := judgeResponse(200, nil, []byte(`{"code":0,"data":{"n":1}}`))
-		if e != nil || obj["data"] == nil {
+		if _, ok := obj["data"]; e != nil || !ok {
 			t.Fatalf("got %v %v", e, obj)
 		}
 	})
+}
+
+// A 1000-text Embedding batch returns millions of numbers; judging success must not decode them all.
+func TestJudgeResponseDoesNotDecodeLargeData(t *testing.T) {
+	var b strings.Builder
+	b.WriteString(`{"code":0,"request_id":"r","data":{"results":[{"index":0,"embedding":[`)
+	for i := 0; i < 10000; i++ {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString("0.0123")
+	}
+	b.WriteString(`]}]}}`)
+	body := []byte(b.String())
+	allocs := testing.AllocsPerRun(5, func() {
+		if e, _ := judgeResponse(200, nil, body); e != nil {
+			t.Fatal(e)
+		}
+	})
+	if allocs > 100 {
+		t.Fatalf("judgeResponse made %.0f allocations for a 10,000-number body, want at most 100", allocs)
+	}
+	// One copy of the data is a single allocation, so the bytes are checked too. TotalAlloc counts the whole
+	// process, so the smallest of several single-call readings is used.
+	least := uint64(math.MaxUint64)
+	for i := 0; i < 10; i++ {
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
+		_, _ = judgeResponse(200, nil, body)
+		runtime.ReadMemStats(&after)
+		least = min(least, after.TotalAlloc-before.TotalAlloc)
+	}
+	if least > uint64(len(body))/10 {
+		t.Fatalf("judgeResponse allocated %d bytes for a %d-byte body, want at most a tenth of it", least, len(body))
+	}
+}
+
+// The success check must agree with decoding the whole body (the behaviour before 0.5.0) on every 2xx shape.
+func TestJudgeResponseMatchesFullDecode(t *testing.T) {
+	reference := func(body []byte) bool {
+		parsed, _ := decodeJSON(stripBOM(body))
+		obj, ok := parsed.(map[string]any)
+		if !ok || len(obj) == 0 {
+			return false
+		}
+		f, isNumber, finite := numberValue(obj["code"])
+		return !isNumber || (finite && f == 0)
+	}
+	for _, body := range []string{
+		`{"code":0}`, `{"code":0.0}`, `{"code":-0}`, `{"code":1e-999}`, `{"code":1e999}`, `{"code":-1e999}`,
+		`{"code":1}`, `{"code":-2}`, `{"code":0.5}`, `{"code":"1"}`, `{"code":null}`, `{"code":true}`,
+		`{"code":{"n":1}}`, `{"code":[1]}`, `{"Code":1}`, `{"code":0,"code":2}`, `{"code":2,"code":0}`,
+		`{"data":[1,2,3]}`, `{}`, `[]`, `[{"code":0}]`, `1`, `"x"`, `null`, ``, `{"a":1} x`, `{"a":1`,
+		"\xef\xbb\xbf{\"code\":0}", " \n{\"code\" : 7 }\n ", `{"code":01}`, `{"code":-}`, `{"a":"é"}`,
+	} {
+		e, _ := judgeResponse(200, nil, []byte(body))
+		if got, want := e == nil, reference([]byte(body)); got != want {
+			t.Errorf("%q: success = %v, full decode says %v", body, got, want)
+		}
+	}
 }

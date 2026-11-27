@@ -33,6 +33,8 @@ var contractCases = []contractCase{
 	{"/video-search", "VideoSearchRequest", reflect.TypeOf(VideoSearchParams{}), "VideoSearchResponse", reflect.TypeOf(VideoSearchResponse{})},
 	{"/design-search", "DesignSearchRequest", reflect.TypeOf(DesignSearchParams{}), "DesignSearchResponse", reflect.TypeOf(DesignSearchResponse{})},
 	{"/extract", "ExtractRequest", reflect.TypeOf(ExtractParams{}), "ExtractResponse", reflect.TypeOf(ExtractResponse{})},
+	{"/embedding", "EmbeddingRequest", reflect.TypeOf(EmbeddingParams{}), "EmbeddingResponse", reflect.TypeOf(EmbeddingResponse{})},
+	{"/vl-embedding", "VLEmbeddingRequest", reflect.TypeOf(VLEmbeddingParams{}), "VLEmbeddingResponse", reflect.TypeOf(VLEmbeddingResponse{})},
 }
 
 // goUnion describes a Go type that decodes a discriminated OpenAPI oneOf.
@@ -288,7 +290,7 @@ func hasOption(opts, want string) bool {
 }
 
 // goNames are the json name parts that are not simply capitalised in Go field names.
-var goNames = map[string]string{"id": "ID", "url": "URL", "urls": "URLs", "hq": "HQ", "cik": "CIK", "linkedin": "LinkedIn"}
+var goNames = map[string]string{"id": "ID", "url": "URL", "urls": "URLs", "hq": "HQ", "cik": "CIK", "linkedin": "LinkedIn", "fps": "FPS"}
 
 func goFieldName(jsonName string) string {
 	var b strings.Builder
